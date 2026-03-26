@@ -1,0 +1,27 @@
+# Binaries
+picobrain-mcp
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+cover.html
+
+# Database
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs (superpowers internal)
+docs/superpowers/
