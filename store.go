@@ -105,13 +105,183 @@ func getThought(db *sql.DB, id string) (*Thought, error) {
 		json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
 	}
 
-	t.CreatedAt, _ = time.Parse("2006-01-02T15:04:05Z", createdAt)
-	if t.CreatedAt.IsZero() {
-		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05-07:00", createdAt)
-	}
-	if t.CreatedAt.IsZero() {
-		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
-	}
+	t.CreatedAt = parseTime(createdAt)
 
 	return &t, nil
+}
+
+func searchByVector(db *sql.DB, embedding []float32, limit int) ([]Thought, error) {
+	vec, err := sqlite_vec.SerializeFloat32(embedding)
+	if err != nil {
+		return nil, fmt.Errorf("serialize query vector: %w", err)
+	}
+
+	rows, err := db.Query(`
+		SELECT v.id, v.distance,
+		       t.content, t.people, t.topics, t.type, t.action_items, t.source, t.created_at
+		FROM thought_vectors v
+		JOIN thoughts t ON t.id = v.id
+		WHERE v.embedding MATCH ?
+		AND k = ?
+		ORDER BY v.distance
+	`, vec, limit)
+	if err != nil {
+		return nil, fmt.Errorf("vector search: %w", err)
+	}
+	defer rows.Close()
+
+	return scanThoughts(rows, true)
+}
+
+func listRecent(db *sql.DB, since time.Time, limit int) ([]Thought, error) {
+	rows, err := db.Query(`
+		SELECT id, content, people, topics, type, action_items, source, created_at
+		FROM thoughts
+		WHERE created_at >= ?
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, since.Format("2006-01-02 15:04:05"), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recent: %w", err)
+	}
+	defer rows.Close()
+
+	return scanThoughts(rows, false)
+}
+
+func getStats(db *sql.DB) (*BrainStats, error) {
+	stats := &BrainStats{}
+
+	// Total and this week
+	err := db.QueryRow("SELECT COUNT(*) FROM thoughts").Scan(&stats.TotalThoughts)
+	if err != nil {
+		return nil, fmt.Errorf("count thoughts: %w", err)
+	}
+
+	if stats.TotalThoughts == 0 {
+		return stats, nil
+	}
+
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM thoughts
+		WHERE created_at >= datetime('now', '-7 days')
+	`).Scan(&stats.ThoughtsThisWeek)
+	if err != nil {
+		return nil, fmt.Errorf("count this week: %w", err)
+	}
+
+	// Top topics using json_each
+	topicRows, err := db.Query(`
+		SELECT value, COUNT(*) as cnt
+		FROM thoughts, json_each(thoughts.topics)
+		GROUP BY value
+		ORDER BY cnt DESC
+		LIMIT 10
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("top topics: %w", err)
+	}
+	defer topicRows.Close()
+
+	for topicRows.Next() {
+		var topic string
+		var cnt int
+		if err := topicRows.Scan(&topic, &cnt); err != nil {
+			return nil, fmt.Errorf("scan topic: %w", err)
+		}
+		stats.TopTopics = append(stats.TopTopics, topic)
+	}
+
+	// Top sources
+	sourceRows, err := db.Query(`
+		SELECT source, COUNT(*) as cnt
+		FROM thoughts
+		WHERE source IS NOT NULL AND source != ''
+		GROUP BY source
+		ORDER BY cnt DESC
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("top sources: %w", err)
+	}
+	defer sourceRows.Close()
+
+	for sourceRows.Next() {
+		var source string
+		var cnt int
+		if err := sourceRows.Scan(&source, &cnt); err != nil {
+			return nil, fmt.Errorf("scan source: %w", err)
+		}
+		stats.TopSources = append(stats.TopSources, source)
+	}
+
+	// Date range
+	var firstStr, lastStr string
+	err = db.QueryRow(`
+		SELECT MIN(created_at), MAX(created_at) FROM thoughts
+	`).Scan(&firstStr, &lastStr)
+	if err != nil {
+		return nil, fmt.Errorf("date range: %w", err)
+	}
+	stats.FirstThought = parseTime(firstStr)
+	stats.LastThought = parseTime(lastStr)
+
+	// Average per day
+	days := stats.LastThought.Sub(stats.FirstThought).Hours() / 24
+	if days < 1 {
+		days = 1
+	}
+	stats.AvgPerDay = float64(stats.TotalThoughts) / days
+
+	return stats, nil
+}
+
+func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
+	var thoughts []Thought
+	for rows.Next() {
+		var t Thought
+		var peopleStr, topicsStr, actionItemsStr sql.NullString
+		var createdAt string
+
+		var err error
+		if withDistance {
+			err = rows.Scan(&t.ID, &t.Distance,
+				&t.Content, &peopleStr, &topicsStr,
+				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+		} else {
+			err = rows.Scan(&t.ID, &t.Content, &peopleStr, &topicsStr,
+				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("scan thought: %w", err)
+		}
+
+		if peopleStr.Valid {
+			json.Unmarshal([]byte(peopleStr.String), &t.People)
+		}
+		if topicsStr.Valid {
+			json.Unmarshal([]byte(topicsStr.String), &t.Topics)
+		}
+		if actionItemsStr.Valid {
+			json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
+		}
+		t.CreatedAt = parseTime(createdAt)
+
+		thoughts = append(thoughts, t)
+	}
+	return thoughts, rows.Err()
+}
+
+func parseTime(s string) time.Time {
+	formats := []string{
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
