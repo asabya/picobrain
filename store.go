@@ -40,7 +40,11 @@ func initSchema(db *sql.DB) error {
 	return nil
 }
 
-func insertThought(db *sql.DB, t *Thought) error {
+type dbExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+func insertThoughtTx(exec dbExecer, t *Thought) error {
 	peopleJSON, _ := json.Marshal(t.People)
 	topicsJSON, _ := json.Marshal(t.Topics)
 	actionItemsJSON, _ := json.Marshal(t.ActionItems)
@@ -50,13 +54,7 @@ func insertThought(db *sql.DB, t *Thought) error {
 		createdAt = time.Now()
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	_, err = tx.Exec(`
+	_, err := exec.Exec(`
 		INSERT INTO thoughts (id, content, people, topics, type, action_items, source, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, t.ID, t.Content, string(peopleJSON), string(topicsJSON),
@@ -70,12 +68,26 @@ func insertThought(db *sql.DB, t *Thought) error {
 		return fmt.Errorf("serialize embedding: %w", err)
 	}
 
-	_, err = tx.Exec(`
+	_, err = exec.Exec(`
 		INSERT INTO thought_vectors (id, embedding)
 		VALUES (?, ?)
 	`, t.ID, vec)
 	if err != nil {
 		return fmt.Errorf("insert vector: %w", err)
+	}
+
+	return nil
+}
+
+func insertThought(db *sql.DB, t *Thought) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := insertThoughtTx(tx, t); err != nil {
+		return err
 	}
 
 	return tx.Commit()
