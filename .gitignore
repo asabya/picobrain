@@ -12,6 +12,7 @@ cover.html
 
 # Database
 *.db
+data/
 
 # IDE
 .idea/
