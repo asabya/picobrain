@@ -1,0 +1,12 @@
+services:
+  picobrain:
+    build: .
+    image: picobrain:latest
+    volumes:
+      - ./data:/data
+    ports:
+      - "8080:8080"
+    command: ["--db", "/data/brain.db", "--transport", "http", "--port", "8080", "--ollama-url", "http://host.docker.internal:11434"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
