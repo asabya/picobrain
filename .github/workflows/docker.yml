@@ -1,12 +1,8 @@
 name: Build and Push to DockerHub
 
 on:
-  push:
-    branches: [master, main]
   release:
     types: [published]
-  pull_request:
-    branches: [master, main]
 
 env:
   REGISTRY: docker.io
