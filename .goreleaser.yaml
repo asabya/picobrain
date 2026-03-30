@@ -31,26 +31,6 @@ builds:
       - -mod=readonly
     ldflags:
       - -s -w -X main.version={{.Version}}
-  - id: linux-armhf
-    main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
-    goos:
-      - linux
-    goarch:
-      - arm
-    goarm:
-      - 7
-    env:
-      - CC=arm-linux-gnueabihf-gcc
-      - CXX=arm-linux-gnueabihf-g++
-      - CGO_CFLAGS=--sysroot=/sysroot/linux/armhf
-      - CGO_LDFLAGS=--sysroot=/sysroot/linux/armhf
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/linux/armhf
-      - PKG_CONFIG_PATH=/sysroot/linux/armhf/opt/vc/lib/pkgconfig:/sysroot/linux/armhf/usr/lib/arm-linux-gnueabihf/pkgconfig:/sysroot/linux/armhf/usr/lib/pkgconfig:/sysroot/linux/armhf/usr/local/lib/pkgconfig
-    flags:
-      - -mod=readonly
-    ldflags:
-      - -s -w -X main.version={{.Version}}
   - id: linux-amd64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
@@ -58,6 +38,8 @@ builds:
       - linux
     goarch:
       - amd64
+    env:
+      - CC=gcc
     flags:
       - -mod=readonly
     ldflags:
@@ -79,7 +61,6 @@ archives:
     builds:
       - darwin-amd64
       - darwin-arm64
-      - linux-armhf
       - linux-amd64
       - windows-amd64
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

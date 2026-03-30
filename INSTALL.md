@@ -16,10 +16,17 @@ This repo ships a local semantic memory brain that speaks MCP over HTTP. `INSTAL
 ### Preferred: Docker (keeps the embedder self-contained)
 
 ```bash
-./scripts/run-docker.sh
+docker pull asabya/picobrain
+docker run -d -v ./data:/app/data -p 8080:8080 asabya/picobrain
 ```
 
-This builds the image, stores the SQLite database in `./data/brain.db`, caches models in `./data/models`, and exposes MCP at `http://localhost:8080/mcp`. Logs stream on stdout, and the first run downloads `nomic-embed-text-v1.5.Q8_0.gguf` before MCP becomes available.
+This pulls the pre-built image, stores the SQLite database in `./data/brain.db`, caches models in `./data/models`, and exposes MCP at `http://localhost:8080/mcp`. Logs stream to stdout, and the first run downloads `nomic-embed-text-v1.5.Q8_0.gguf` before MCP becomes available.
+
+Alternatively, build locally:
+
+```bash
+./scripts/run-docker.sh
+```
 
 ### Optional: Local binary (manual control)
 
