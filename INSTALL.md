@@ -4,7 +4,8 @@ This repo ships a local semantic memory brain that speaks MCP over HTTP. `INSTAL
 
 1. Bootstrap the `picobrain` process (Docker or local binary).
 2. Wire the agent or client into `http://localhost:8080/mcp`.
-3. Discover the repository’s built-in skill instructions so the agent knows *which tools to call* and *how to think about adding facts.*
+
+picobrain exposes 5 MCP tools: `store_thought`, `semantic_search`, `list_recent`, `stats`, `bulk_import`. MCP clients discover these automatically via the protocol — no additional skill files needed.
 
 ## Step 0: Prerequisites
 
@@ -47,23 +48,11 @@ A healthy server replies with the MCP handshake payload. Once this succeeds, the
 
 ## Step 3: Connect your agent or client
 
-### Codex (native skill discovery)
-
-1. Symlink the shipped skill so Codex can find it:
-
-```bash
-mkdir -p ~/.agents/skills
-ln -s ~/path/to/picobrain/.codex/skills/picobrain ~/.agents/skills/picobrain
-```
-
-2. Restart Codex and let it read the skill instructions in `.codex/skills/picobrain/README.md`.
-3. Invoke the `picobrain` skill when you need to store, search, or inspect memory facts. The skill explains which MCP tools should be called and how to think about facts, metadata, and freshness.
-
 ### Claude Desktop
 
 Copy or reference `docs/claude-desktop-config.json` (exact JSON is mirrored in this repo) to the `mcpServers` block. That config launches `@modelcontextprotocol/server-streamable-http` pointed at `http://localhost:8080/mcp` so Claude Desktop can pipe its own MCP connection through the bridge.
 
-### OpenClaw / PicoClaw / generic MCP clients
+### OpenClaw / PicoClaw / Codex / generic MCP clients
 
 Define an MCP server named `picobrain` that targets `http://localhost:8080/mcp`. Here is the minimal JSON blob that works inside most MCP client configs:
 
@@ -83,28 +72,21 @@ That entry keeps the agent focused on the HTTP transport rather than custom auth
 
 Invoke `store_thought`, then `semantic_search` or `list_recent` to confirm round trips. Bulk imports also work via `bulk_import` when onboarding historical notes.
 
-## Step 4: Install the agent skill
+## MCP Tools
 
-### For Codex agents
+picobrain registers 5 tools automatically discovered by any MCP client:
 
-```bash
-mkdir -p ~/.agents/skills/use-brain && \
-curl -fsSL https://raw.githubusercontent.com/asabya/picobrain/refs/heads/master/skills/use-brain/SKILL.md -o ~/.agents/skills/use-brain/SKILL.md
-```
-
-This downloads and installs the `use-brain` skill so Codex agents know when to search picobrain before asking and how to store distilled facts.
-
-### For other agents
-
-Copy or reference `skills/use-brain/SKILL.md` into your agent's skill discovery path.
-
-## Step 5: Follow the skill guidance
-
-Read the installed skill at `~/.agents/skills/use-brain/SKILL.md` for best practices: search before writing, store distilled metadata (people, topics, action items), and avoid saving raw transcripts. Call `stats` only from housekeeping contexts and let `bulk_import` handle migrations of large datasets.
+| Tool | Description |
+|------|-------------|
+| `store_thought` | Store a thought with optional metadata (people, topics, type, action_items, source) |
+| `semantic_search` | Search memories by meaning using vector similarity |
+| `list_recent` | List recently captured thoughts ordered by newest first |
+| `stats` | Get brain statistics (total thoughts, top topics, sources, date range) |
+| `bulk_import` | Import multiple thoughts from JSONL format |
 
 ## Updating & Uninstall
 
 - Re-run `docker pull asabya/picobrain` or `./scripts/run-docker.sh` to update the Docker image.
 - For local binaries, `go build` again and restart the server with the same flags.
 - Stop the Docker stack with `docker compose down`.
-- Remove the skill file (`rm ~/.agents/skills/use-brain/SKILL.md`) to uninstall the skill; deleting the repo is optional.
+- Remove the Docker volume or delete the database file to uninstall data; deleting the repo is optional.

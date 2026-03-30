@@ -194,18 +194,19 @@ func (e *LocalEmbedder) Embed(ctx context.Context, text string) ([]float32, erro
 		return nil, fmt.Errorf("llama-server returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var result struct {
-		Embedding []float32 `json:"embedding"`
+	var result []struct {
+		Embedding [][]float32 `json:"embedding"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode embedding response: %w", err)
 	}
+	rawEmbedding := result[0].Embedding[0]
 
-	if len(result.Embedding) != ExpectedEmbeddingDim {
-		return nil, fmt.Errorf("expected %d dimensions, got %d", ExpectedEmbeddingDim, len(result.Embedding))
+	if len(rawEmbedding) != ExpectedEmbeddingDim {
+		return nil, fmt.Errorf("expected %d dimensions, got %d", ExpectedEmbeddingDim, len(rawEmbedding))
 	}
 
-	return result.Embedding, nil
+	return rawEmbedding, nil
 }
 
 // Close stops the underlying llama-server process.

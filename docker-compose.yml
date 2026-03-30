@@ -4,7 +4,7 @@ services:
     build: .
     image: picobrain:latest
     volumes:
-      - ./data:/data
+      - ~/.picobrain/brain.db:/data
     ports:
       - "8080:8080"
     command: ["--db", "/data/brain.db", "--model-cache", "/data/models", "--port", "8080"]
