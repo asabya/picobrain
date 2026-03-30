@@ -17,7 +17,7 @@ import (
 
 type Brain struct {
 	db       *sql.DB
-	embedder *OllamaEmbedder
+	embedder Embedder
 	config   Config
 }
 
@@ -45,12 +45,48 @@ func New(cfg Config) (*Brain, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 
-	embedder := NewOllamaEmbedder(cfg.OllamaURL, cfg.EmbedModel)
+	embedder, err := NewLocalEmbedder(cfg.EmbedModel, cfg.ModelCacheDir, cfg.AutoDownload)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create embedder: %w", err)
+	}
 
 	return &Brain{db: db, embedder: embedder, config: cfg}, nil
 }
 
+// NewWithEmbedder creates a Brain with a provided embedder.
+// This is useful for testing with mock embedders.
+func NewWithEmbedder(cfg Config, emb Embedder) (*Brain, error) {
+	sqlite_vec.Auto()
+
+	if cfg.DBPath != ":memory:" {
+		dir := filepath.Dir(cfg.DBPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("create db directory: %w", err)
+		}
+	}
+
+	db, err := sql.Open("sqlite3", cfg.DBPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	if cfg.DBPath != ":memory:" {
+		db.Exec("PRAGMA journal_mode=WAL")
+	}
+
+	if err := initSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("init schema: %w", err)
+	}
+
+	return &Brain{db: db, embedder: emb, config: cfg}, nil
+}
+
 func (b *Brain) Close() error {
+	if b.embedder != nil {
+		b.embedder.Close()
+	}
 	return b.db.Close()
 }
 

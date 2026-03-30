@@ -10,58 +10,51 @@ import (
 	"time"
 )
 
-func mockOllama(t *testing.T) *httptest.Server {
-	t.Helper()
-	dim := 768
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Prompt string `json:"prompt"`
-		}
-		json.NewDecoder(r.Body).Decode(&req)
-
-		// Generate a deterministic embedding based on the prompt
-		// Use the first byte of the prompt to set a dimension
-		emb := make([]float64, dim)
-		if len(req.Prompt) > 0 {
-			idx := int(req.Prompt[0]) % dim
-			emb[idx] = 1.0
-		}
-
-		json.NewEncoder(w).Encode(map[string]any{
-			"embedding": emb,
-		})
-	}))
+// mockEmbedder is a mock implementation of the Embedder interface for testing.
+type mockEmbedder struct {
+	dim int
 }
 
-func testBrain(t *testing.T) (*Brain, *httptest.Server) {
+func (m *mockEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	emb := make([]float32, m.dim)
+	if len(text) > 0 {
+		emb[int(text[0])%m.dim] = 1.0
+	}
+	return emb, nil
+}
+
+func (m *mockEmbedder) Close() error {
+	return nil
+}
+
+func testBrain(t *testing.T) *Brain {
 	t.Helper()
-	ollamaServer := mockOllama(t)
-	t.Cleanup(ollamaServer.Close)
 
 	cfg := Config{
-		DBPath:     ":memory:",
-		OllamaURL:  ollamaServer.URL,
-		EmbedModel: "nomic-embed-text",
+		DBPath:        ":memory:",
+		EmbedModel:    "mock",
+		ModelCacheDir: "",
+		AutoDownload:  false,
 	}
 
-	brain, err := New(cfg)
+	brain, err := NewWithEmbedder(cfg, &mockEmbedder{dim: 768})
 	if err != nil {
 		t.Fatalf("New brain: %v", err)
 	}
 	t.Cleanup(func() { brain.Close() })
 
-	return brain, ollamaServer
+	return brain
 }
 
 func TestNewBrain(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	if brain == nil {
 		t.Fatal("expected non-nil brain")
 	}
 }
 
 func TestBrainStore(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	thought := &Thought{
@@ -83,7 +76,7 @@ func TestBrainStore(t *testing.T) {
 }
 
 func TestBrainStoreWithExistingID(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	thought := &Thought{
@@ -102,7 +95,7 @@ func TestBrainStoreWithExistingID(t *testing.T) {
 }
 
 func TestBrainStoreWithPrecomputedEmbedding(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	emb := make([]float32, 768)
@@ -129,7 +122,7 @@ func TestBrainStoreWithPrecomputedEmbedding(t *testing.T) {
 }
 
 func TestBrainSearch(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	// Store a few thoughts
@@ -159,7 +152,7 @@ func TestBrainSearch(t *testing.T) {
 }
 
 func TestBrainListRecent(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	err := brain.Store(ctx, &Thought{Content: "thought one", Source: "test"})
@@ -183,7 +176,7 @@ func TestBrainListRecent(t *testing.T) {
 }
 
 func TestBrainStats(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	brain.Store(ctx, &Thought{Content: "first", Topics: []string{"work"}, Source: "slack"})
@@ -200,7 +193,7 @@ func TestBrainStats(t *testing.T) {
 }
 
 func TestBrainBulkImport(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	jsonl := `{"content":"imported thought one","people":["Alice"],"topics":["work"],"type":"insight","source":"import"}
@@ -227,7 +220,7 @@ func TestBrainBulkImport(t *testing.T) {
 }
 
 func TestBrainBulkImportEmpty(t *testing.T) {
-	brain, _ := testBrain(t)
+	brain := testBrain(t)
 	ctx := context.Background()
 
 	count, err := brain.BulkImport(ctx, strings.NewReader(""))
@@ -236,5 +229,38 @@ func TestBrainBulkImportEmpty(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected 0 imported from empty input, got %d", count)
+	}
+}
+
+// TestOllamaEmbedder tests the OllamaEmbedder with a mock server.
+func TestOllamaEmbedder(t *testing.T) {
+	// Start a mock Ollama server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Prompt string `json:"prompt"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		emb := make([]float64, 768)
+		if len(req.Prompt) > 0 {
+			idx := int(req.Prompt[0]) % 768
+			emb[idx] = 1.0
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"embedding": emb,
+		})
+	}))
+	defer ts.Close()
+
+	embedder := NewOllamaEmbedder(ts.URL, "nomic-embed-text")
+	ctx := context.Background()
+
+	emb, err := embedder.Embed(ctx, "test prompt")
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(emb) != 768 {
+		t.Errorf("expected 768 dims, got %d", len(emb))
 	}
 }

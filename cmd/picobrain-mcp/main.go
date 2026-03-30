@@ -13,16 +13,17 @@ func main() {
 	defaults := picobrain.DefaultConfig()
 
 	dbPath := flag.String("db", defaults.DBPath, "path to brain database")
-	ollamaURL := flag.String("ollama-url", defaults.OllamaURL, "Ollama API endpoint")
-	embedModel := flag.String("embed-model", defaults.EmbedModel, "embedding model name")
-	transport := flag.String("transport", "stdio", "transport type: stdio or http")
-	port := flag.String("port", "8080", "HTTP listen port (only for http transport)")
+	embedModel := flag.String("embed-model", defaults.EmbedModel, "embedding model name (e.g. nomic-embed-text-v1.5)")
+	modelCache := flag.String("model-cache", defaults.ModelCacheDir, "directory to cache downloaded models")
+	noAutoDownload := flag.Bool("no-auto-download", false, "disable automatic model download (fail if model not cached)")
+	port := flag.String("port", "8080", "HTTP listen port")
 	flag.Parse()
 
 	cfg := picobrain.Config{
-		DBPath:     *dbPath,
-		OllamaURL:  *ollamaURL,
-		EmbedModel: *embedModel,
+		DBPath:        *dbPath,
+		EmbedModel:    *embedModel,
+		ModelCacheDir: *modelCache,
+		AutoDownload:  !*noAutoDownload,
 	}
 
 	brain, err := picobrain.New(cfg)
@@ -35,19 +36,9 @@ func main() {
 	s := server.NewMCPServer("picobrain", "0.1.0")
 	picobrain.RegisterMCPTools(s, brain)
 
-	switch *transport {
-	case "http":
-		httpServer := server.NewStreamableHTTPServer(s)
-		if err := httpServer.Start(":" + *port); err != nil {
-			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
-			os.Exit(1)
-		}
-	case "stdio":
-		fallthrough
-	default:
-		if err := server.ServeStdio(s); err != nil {
-			fmt.Fprintf(os.Stderr, "server error: %v\n", err)
-			os.Exit(1)
-		}
+	httpServer := server.NewStreamableHTTPServer(s)
+	if err := httpServer.Start(":" + *port); err != nil {
+		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
 	}
 }

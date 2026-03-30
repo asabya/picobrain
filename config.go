@@ -6,16 +6,18 @@ import (
 )
 
 type Config struct {
-	DBPath     string
-	OllamaURL  string
-	EmbedModel string
+	DBPath        string
+	EmbedModel    string
+	ModelCacheDir string
+	AutoDownload  bool
 }
 
 func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
 	return Config{
-		DBPath:     filepath.Join(home, ".picobrain", "brain.db"),
-		OllamaURL:  "http://localhost:11434",
-		EmbedModel: "nomic-embed-text",
+		DBPath:        filepath.Join(home, ".picobrain", "brain.db"),
+		EmbedModel:    "nomic-embed-text-v1.5",
+		ModelCacheDir: filepath.Join(home, ".picobrain", "models"),
+		AutoDownload:  true,
 	}
 }
