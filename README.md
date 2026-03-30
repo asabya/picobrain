@@ -161,6 +161,8 @@ Good patterns:
 - search semantically before asking the user to repeat context
 - import historical notes once, then add distilled updates
 
+See `INSTALL.md` for the agent-focused bootstrap, discovery, and MCP wiring instructions that Codex, Claude Desktop, OpenClaw, PicoClaw, and other clients rely on.
+
 ## Model Caching
 
 The local embedder uses:
