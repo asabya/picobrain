@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: picobrain
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: picobrain-mcp
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+      - netbsd
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "6"
+      - "7"
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: netbsd
+        goarch: arm
+
+dockers_v2:
+  - id: picobrain
+    dockerfile: Dockerfile
+    images:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picobrain"
+    platforms:
+      - linux/amd64
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+release:
+  footer: >-
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
