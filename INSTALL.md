@@ -83,13 +83,28 @@ That entry keeps the agent focused on the HTTP transport rather than custom auth
 
 Invoke `store_thought`, then `semantic_search` or `list_recent` to confirm round trips. Bulk imports also work via `bulk_import` when onboarding historical notes.
 
-## Step 4: Follow the skill guidance
+## Step 4: Install the agent skill
 
-Read `.codex/skills/picobrain/README.md` for best practices: search before writing, store distilled metadata (people, topics, action items), and avoid saving raw transcripts. Call `stats` only from housekeeping contexts and let `bulk_import` handle migrations of large datasets.
+### For Codex agents
+
+```bash
+mkdir -p ~/.agents/skills/use-brain && \
+curl -fsSL https://raw.githubusercontent.com/asabya/picobrain/refs/heads/master/skills/use-brain/SKILL.md -o ~/.agents/skills/use-brain/SKILL.md
+```
+
+This downloads and installs the `use-brain` skill so Codex agents know when to search picobrain before asking and how to store distilled facts.
+
+### For other agents
+
+Copy or reference `skills/use-brain/SKILL.md` into your agent's skill discovery path.
+
+## Step 5: Follow the skill guidance
+
+Read the installed skill at `~/.agents/skills/use-brain/SKILL.md` for best practices: search before writing, store distilled metadata (people, topics, action items), and avoid saving raw transcripts. Call `stats` only from housekeeping contexts and let `bulk_import` handle migrations of large datasets.
 
 ## Updating & Uninstall
 
-- Re-run `./scripts/run-docker.sh` after pulling updates to rebuild the Docker image.
+- Re-run `docker pull asabya/picobrain` or `./scripts/run-docker.sh` to update the Docker image.
 - For local binaries, `go build` again and restart the server with the same flags.
 - Stop the Docker stack with `docker compose down`.
-- Remove the skill symlink (`rm ~/.agents/skills/picobrain`) to unload the skill; deleting the repo is optional.
+- Remove the skill file (`rm ~/.agents/skills/use-brain/SKILL.md`) to uninstall the skill; deleting the repo is optional.
