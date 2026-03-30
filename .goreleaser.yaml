@@ -1,57 +1,105 @@
-# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-version: 2
-
-project_name: picobrain
-
-before:
-  hooks:
-    - go mod tidy
-
 builds:
-  - id: picobrain-mcp
+  - id: darwin-amd64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
-    env:
-      - CGO_ENABLED=1
     goos:
-      - linux
       - darwin
-      - windows
-      - freebsd
-      - netbsd
     goarch:
       - amd64
+    env:
+      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/amd64
+      - PKG_CONFIG_PATH=/sysroot/macos/amd64/usr/local/lib/pkgconfig
+      - CC=o64-clang
+      - CXX=o64-clang++
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+  - id: darwin-arm64
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
+      - darwin
+    goarch:
       - arm64
+    env:
+      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/arm64
+      - PKG_CONFIG_PATH=/sysroot/macos/arm64/usr/local/lib/pkgconfig
+      - CC=o64-clang
+      - CXX=o64-clang++
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+  - id: linux-armhf
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
+      - linux
+    goarch:
+      - arm
     goarm:
-      - "6"
-      - "7"
-    ignore:
-      - goos: windows
-        goarch: arm
-      - goos: netbsd
-        goarch: arm
-
-dockers_v2:
-  - id: picobrain
-    dockerfile: Dockerfile
-    images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picobrain"
-    platforms:
-      - linux/amd64
+      - 7
+    env:
+      - CC=arm-linux-gnueabihf-gcc
+      - CXX=arm-linux-gnueabihf-g++
+      - CGO_CFLAGS=--sysroot=/sysroot/linux/armhf
+      - CGO_LDFLAGS=--sysroot=/sysroot/linux/armhf
+      - PKG_CONFIG_SYSROOT_DIR=/sysroot/linux/armhf
+      - PKG_CONFIG_PATH=/sysroot/linux/armhf/opt/vc/lib/pkgconfig:/sysroot/linux/armhf/usr/lib/arm-linux-gnueabihf/pkgconfig:/sysroot/linux/armhf/usr/lib/pkgconfig:/sysroot/linux/armhf/usr/local/lib/pkgconfig
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+  - id: linux-amd64
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+  - id: windows-amd64
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
+      - windows
+    goarch:
+      - amd64
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
 
 archives:
-  - formats: [tar.gz]
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    format_overrides:
-      - goos: windows
-        formats: [zip]
+  - id: picobrain
+    builds:
+      - darwin-amd64
+      - darwin-arm64
+      - linux-armhf
+      - linux-amd64
+      - windows-amd64
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: zip
+    wrap_in_directory: true
+
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Tag }}"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
 
 release:
-  footer: >-
-    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+  github:
+    owner: asabya
+    name: picobrain
+  prerelease: auto
+  draft: false
