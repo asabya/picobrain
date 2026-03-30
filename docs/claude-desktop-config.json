@@ -5,9 +5,7 @@
       "args": [
         "-y",
         "@modelcontextprotocol/server-streamable-http",
-        "http://localhost:8080",
-        "--auth-header",
-        "Bearer picobrain"
+        "http://localhost:8080/mcp"
       ]
     }
   }
