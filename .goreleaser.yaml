@@ -1,67 +1,16 @@
 builds:
-  - id: darwin-amd64
-    main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
-    goos:
-      - darwin
-    goarch:
-      - amd64
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/amd64
-      - PKG_CONFIG_PATH=/sysroot/macos/amd64/usr/local/lib/pkgconfig
-      - CC=o64-clang
-      - CXX=o64-clang++
-    flags:
-      - -mod=readonly
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: darwin-arm64
-    main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
-    goos:
-      - darwin
-    goarch:
-      - arm64
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/arm64
-      - PKG_CONFIG_PATH=/sysroot/macos/arm64/usr/local/lib/pkgconfig
-      - CC=o64-clang
-      - CXX=o64-clang++
-    flags:
-      - -mod=readonly
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: linux-amd64
+  - id: picobrain-mcp
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
     goos:
       - linux
-    goarch:
-      - amd64
-    flags:
-      - -mod=readonly
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: linux-arm64
-    main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
-    goos:
-      - linux
-    goarch:
-      - arm64
-    env:
-      - CC=aarch64-linux-gnu-gcc
-    flags:
-      - -mod=readonly
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-  - id: windows-amd64
-    main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
-    goos:
       - windows
+      - darwin
     goarch:
       - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=1
     flags:
       - -mod=readonly
     ldflags:
@@ -70,19 +19,14 @@ builds:
 archives:
   - id: picobrain
     builds:
-      - darwin-amd64
-      - darwin-arm64
-      - linux-amd64
-      - linux-arm64
-      - windows-amd64
+      - picobrain-mcp
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format: zip
     wrap_in_directory: true
 
 checksum:
   name_template: 'checksums.txt'
-snapshot:
-  name_template: "{{ .Tag }}"
+
 changelog:
   sort: asc
   filters:
