@@ -2,6 +2,12 @@
 
 Local semantic memory for AI agents. Stores notes, decisions, and context in SQLite with local embeddings (`nomic-embed-text-v1.5`). Exposes memory over MCP HTTP.
 
+## Inspiration
+
+Picobrain is inspired by [OB1](https://github.com/NateBJones-Projects/OB1) and this video: [Build Your AI a Second Brain](https://www.youtube.com/watch?v=2JiMmye2ezg).
+
+Thanks to Nate B Jones for sharing the project and walkthrough.
+
 ## Docker (Recommended)
 
 ```bash
