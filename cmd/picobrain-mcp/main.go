@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/asabya/picobrain"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -33,8 +35,32 @@ func main() {
 	}
 	defer brain.Close()
 
-	s := server.NewMCPServer("picobrain", "0.1.0")
+	s := server.NewMCPServer("picobrain", "0.1.0",
+		server.WithPromptCapabilities(false),
+	)
 	picobrain.RegisterMCPTools(s, brain)
+
+	s.AddPrompt(
+		mcp.NewPrompt("observe",
+			mcp.WithPromptDescription("System prompt for compressing conversation messages into dense observations"),
+		),
+		func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return mcp.NewGetPromptResult("System prompt for observational memory", []mcp.PromptMessage{
+				mcp.NewPromptMessage(mcp.Role("system"), mcp.NewTextContent(picobrain.ObserverPrompt)),
+			}), nil
+		},
+	)
+
+	s.AddPrompt(
+		mcp.NewPrompt("reflect",
+			mcp.WithPromptDescription("System prompt for consolidating and pruning observations"),
+		),
+		func(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return mcp.NewGetPromptResult("System prompt for memory reflection", []mcp.PromptMessage{
+				mcp.NewPromptMessage(mcp.Role("system"), mcp.NewTextContent(picobrain.ReflectorPrompt)),
+			}), nil
+		},
+	)
 
 	httpServer := server.NewStreamableHTTPServer(s)
 	if err := httpServer.Start(":" + *port); err != nil {
