@@ -102,7 +102,7 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 
 		limit := request.GetInt("limit", 10)
 
-		results, err := brain.Search(ctx, query, limit)
+		results, err := brain.Search(ctx, query, limit, "")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 		}
@@ -124,7 +124,7 @@ func listRecentHandler(brain *Brain) server.ToolHandlerFunc {
 
 		limit := request.GetInt("limit", 20)
 
-		results, err := brain.ListRecent(ctx, since, limit)
+		results, err := brain.ListRecent(ctx, since, limit, "")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("list recent failed: %v", err)), nil
 		}

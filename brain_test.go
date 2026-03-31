@@ -112,7 +112,7 @@ func TestBrainStoreWithPrecomputedEmbedding(t *testing.T) {
 	}
 
 	// Verify the thought was stored (search should find it)
-	results, err := brain.Search(ctx, "Pre-embedded thought", 1)
+	results, err := brain.Search(ctx, "Pre-embedded thought", 1, "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestBrainSearch(t *testing.T) {
 		}
 	}
 
-	results, err := brain.Search(ctx, "Alice frontend", 2)
+	results, err := brain.Search(ctx, "Alice frontend", 2, "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestBrainListRecent(t *testing.T) {
 	}
 
 	since := time.Now().Add(-1 * time.Hour)
-	results, err := brain.ListRecent(ctx, since, 10)
+	results, err := brain.ListRecent(ctx, since, 10, "")
 	if err != nil {
 		t.Fatalf("ListRecent: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestBrainDelete(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	results, err := brain.Search(ctx, "deleted", 10)
+	results, err := brain.Search(ctx, "deleted", 10, "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -264,6 +264,42 @@ func TestBrainDeleteNonexistent(t *testing.T) {
 	err := brain.Delete(ctx, "does-not-exist")
 	if err != nil {
 		t.Fatalf("Delete nonexistent should not error: %v", err)
+	}
+}
+
+func TestBrainSearchWithTypeFilter(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	brain.Store(ctx, &Thought{Content: "regular thought", Type: "idea", Source: "test"})
+	brain.Store(ctx, &Thought{Content: "observation about coding", Type: "observation", Source: "agent"})
+
+	results, err := brain.Search(ctx, "coding", 10, "observation")
+	if err != nil {
+		t.Fatalf("Search with type: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 observation, got %d", len(results))
+	}
+	if results[0].Type != "observation" {
+		t.Errorf("expected observation type, got %s", results[0].Type)
+	}
+}
+
+func TestBrainListRecentWithTypeFilter(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	brain.Store(ctx, &Thought{Content: "regular thought", Type: "idea", Source: "test"})
+	brain.Store(ctx, &Thought{Content: "observation", Type: "observation", Source: "agent"})
+
+	since := time.Now().Add(-1 * time.Hour)
+	results, err := brain.ListRecent(ctx, since, 10, "observation")
+	if err != nil {
+		t.Fatalf("ListRecent with type: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 observation, got %d", len(results))
 	}
 }
 
