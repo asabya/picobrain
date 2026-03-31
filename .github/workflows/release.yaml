@@ -31,11 +31,12 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: build --snapshot --clean
+          args: build --snapshot --clean --single-target
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
