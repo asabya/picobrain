@@ -93,6 +93,16 @@ func insertThought(db *sql.DB, t *Thought) error {
 	return tx.Commit()
 }
 
+func deleteThoughtTx(exec dbExecer, id string) error {
+	if _, err := exec.Exec("DELETE FROM thoughts WHERE id = ?", id); err != nil {
+		return fmt.Errorf("delete from thoughts: %w", err)
+	}
+	if _, err := exec.Exec("DELETE FROM thought_vectors WHERE id = ?", id); err != nil {
+		return fmt.Errorf("delete from thought_vectors: %w", err)
+	}
+	return nil
+}
+
 func deleteThought(db *sql.DB, id string) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -100,11 +110,8 @@ func deleteThought(db *sql.DB, id string) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec("DELETE FROM thoughts WHERE id = ?", id); err != nil {
-		return fmt.Errorf("delete from thoughts: %w", err)
-	}
-	if _, err := tx.Exec("DELETE FROM thought_vectors WHERE id = ?", id); err != nil {
-		return fmt.Errorf("delete from thought_vectors: %w", err)
+	if err := deleteThoughtTx(tx, id); err != nil {
+		return err
 	}
 
 	return tx.Commit()
