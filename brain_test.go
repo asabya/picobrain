@@ -232,6 +232,41 @@ func TestBrainBulkImportEmpty(t *testing.T) {
 	}
 }
 
+func TestBrainDelete(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	thought := &Thought{Content: "to be deleted", Source: "test"}
+	if err := brain.Store(ctx, thought); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	err := brain.Delete(ctx, thought.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	results, err := brain.Search(ctx, "deleted", 10)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	for _, r := range results {
+		if r.ID == thought.ID {
+			t.Error("deleted thought should not appear in search results")
+		}
+	}
+}
+
+func TestBrainDeleteNonexistent(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	err := brain.Delete(ctx, "does-not-exist")
+	if err != nil {
+		t.Fatalf("Delete nonexistent should not error: %v", err)
+	}
+}
+
 // TestOllamaEmbedder tests the OllamaEmbedder with a mock server.
 func TestOllamaEmbedder(t *testing.T) {
 	// Start a mock Ollama server

@@ -134,6 +134,10 @@ func (b *Brain) Stats(ctx context.Context) (*BrainStats, error) {
 	return getStats(b.db)
 }
 
+func (b *Brain) Delete(ctx context.Context, id string) error {
+	return deleteThought(b.db, id)
+}
+
 func (b *Brain) BulkImport(ctx context.Context, r io.Reader) (int, error) {
 	scanner := bufio.NewScanner(r)
 	count := 0
