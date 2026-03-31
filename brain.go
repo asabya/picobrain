@@ -138,6 +138,40 @@ func (b *Brain) Delete(ctx context.Context, id string) error {
 	return deleteThought(b.db, id)
 }
 
+type ReflectResult struct {
+	Stored  []string `json:"stored"`
+	Deleted []string `json:"deleted"`
+}
+
+func (b *Brain) Reflect(ctx context.Context, deleteIDs []string, newThoughts []*Thought) (*ReflectResult, error) {
+	for _, t := range newThoughts {
+		if t.ID == "" {
+			t.ID = uuid.New().String()
+		}
+		if t.CreatedAt.IsZero() {
+			t.CreatedAt = time.Now()
+		}
+		if t.Embedding == nil {
+			emb, err := b.embedder.Embed(ctx, t.Content)
+			if err != nil {
+				return nil, fmt.Errorf("generate embedding: %w", err)
+			}
+			t.Embedding = emb
+		}
+	}
+
+	if err := reflectTx(b.db, deleteIDs, newThoughts); err != nil {
+		return nil, err
+	}
+
+	stored := make([]string, len(newThoughts))
+	for i, t := range newThoughts {
+		stored[i] = t.ID
+	}
+
+	return &ReflectResult{Stored: stored, Deleted: deleteIDs}, nil
+}
+
 func (b *Brain) BulkImport(ctx context.Context, r io.Reader) (int, error) {
 	scanner := bufio.NewScanner(r)
 	count := 0

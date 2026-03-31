@@ -267,6 +267,46 @@ func TestBrainDeleteNonexistent(t *testing.T) {
 	}
 }
 
+func TestBrainReflect(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Store two observations
+	brain.Store(ctx, &Thought{Content: "Obs 1: user discussed auth", Type: "observation", Source: "agent"})
+	brain.Store(ctx, &Thought{Content: "Obs 2: user discussed auth flow", Type: "observation", Source: "agent"})
+
+	// Get their IDs
+	since := time.Now().Add(-1 * time.Hour)
+	obs, _ := brain.ListRecent(ctx, since, 10, "observation")
+	if len(obs) != 2 {
+		t.Fatalf("expected 2 observations, got %d", len(obs))
+	}
+
+	// Reflect: consolidate into one
+	newThoughts := []*Thought{
+		{Content: "Consolidated: user discussed auth flow design", Type: "observation", Source: "agent"},
+	}
+	ids := []string{obs[0].ID, obs[1].ID}
+
+	result, err := brain.Reflect(ctx, ids, newThoughts)
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+
+	if len(result.Stored) != 1 {
+		t.Errorf("expected 1 stored, got %d", len(result.Stored))
+	}
+	if len(result.Deleted) != 2 {
+		t.Errorf("expected 2 deleted, got %d", len(result.Deleted))
+	}
+
+	// Verify only the consolidated observation exists
+	recent, _ := brain.ListRecent(ctx, since, 10, "observation")
+	if len(recent) != 1 {
+		t.Fatalf("expected 1 observation after reflect, got %d", len(recent))
+	}
+}
+
 func TestBrainSearchWithTypeFilter(t *testing.T) {
 	brain := testBrain(t)
 	ctx := context.Background()
