@@ -2,29 +2,35 @@
 
 Local semantic memory for AI agents. Stores notes, decisions, and context in SQLite with local embeddings (`nomic-embed-text-v1.5`). Exposes memory over MCP HTTP.
 
-## Inspiration
+Inspired by [OB1](https://github.com/NateBJones-Projects/OB1) and [Build Your AI a Second Brain](https://www.youtube.com/watch?v=2JiMmye2ezg).
 
-Picobrain is inspired by [OB1](https://github.com/NateBJones-Projects/OB1) and this video: [Build Your AI a Second Brain](https://www.youtube.com/watch?v=2JiMmye2ezg).
+## Quick Start
 
-Thanks to Nate B Jones for sharing the project and walkthrough.
-
-## Docker (Recommended)
+### Docker (Recommended)
 
 ```bash
 docker pull asabya/picobrain:latest
 docker run -d -p 8080:8080 -v ~/.picobrain:/data --name picobrain asabya/picobrain:latest
 ```
 
-Or with compose:
+First startup downloads the embedding model (~500MB). Wait for the log line confirming the server is ready.
+
+### Or with Docker Compose
 
 ```bash
 docker compose up -d
 docker compose logs -f
 ```
 
-First startup downloads the embedding model. The DB is at `~/.picobrain/brain.db`.
+### Verify it's running
 
-## Client Configuration
+```bash
+curl http://localhost:8080/mcp
+```
+
+## Connecting Your Agent
+
+Point any MCP client to `http://localhost:8080/mcp`. Example config:
 
 ```json
 {
@@ -36,9 +42,49 @@ First startup downloads the embedding model. The DB is at `~/.picobrain/brain.db
 }
 ```
 
-## Local Run Without Docker
+### Claude Desktop
 
-### 1. Prerequisites
+Add to your `mcpServers` config:
+
+```json
+{
+  "mcpServers": {
+    "picobrain": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-streamable-http", "http://localhost:8080/mcp"]
+    }
+  }
+}
+```
+
+### OpenClaw / Codex / Other MCP Clients
+
+Just add `http://localhost:8080/mcp` as an HTTP MCP server in your client config.
+
+## MCP Tools
+
+Once connected, these tools are available automatically:
+
+| Tool | What it does |
+|------|-------------|
+| `store_thought` | Save a memory with metadata (people, topics, type, action_items, source) |
+| `semantic_search` | Search memories by meaning |
+| `list_recent` | List latest captured thoughts |
+| `delete_thought` | Delete a thought by ID |
+| `reflect` | Consolidate observations — atomically delete old thoughts and store new consolidated ones |
+| `stats` | Brain stats (total thoughts, top topics, sources) |
+| `bulk_import` | Import thoughts from JSONL |
+
+## MCP Prompts
+
+| Prompt | Purpose |
+|--------|---------|
+| `observe` | System prompt for compressing conversation messages into dense, factual observations |
+| `reflect` | System prompt for long-term memory consolidation — merge, drop, and reorganize observations |
+
+## Local Build (Without Docker)
+
+### Prerequisites
 
 - CGO toolchain for SQLite
 - `llama-server` on `PATH` (or set `PICOBRAIN_LLAMA_SERVER_BIN`)
@@ -51,23 +97,16 @@ brew install llama.cpp
 apt-get install build-essential cmake
 ```
 
-### 2. Clone & Build
+### Build & Run
 
 ```bash
 git clone https://github.com/asabya/picobrain.git
 cd picobrain
 go build -o picobrain-mcp ./cmd/picobrain-mcp
-```
-
-### 3. Run
-
-```bash
 ./picobrain-mcp --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
 ```
 
-MCP endpoint: `http://localhost:8080/mcp`
-
-## Flags
+## CLI Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
@@ -76,16 +115,6 @@ MCP endpoint: `http://localhost:8080/mcp`
 | `--model-cache` | Model cache directory | required |
 | `--no-auto-download` | Fail instead of downloading model | `false` |
 | `--port` | HTTP listen port | `8080` |
-
-## MCP Tools
-
-`store_thought`, `semantic_search`, `list_recent`, `stats`, `bulk_import`
-
-## Usage Tips
-
-- Store concise facts and decisions, not raw transcripts
-- Include `people`, `topics`, `type`, and `action_items` when available
-- Search semantically before asking the user to repeat context
 
 ## Go Library
 
@@ -108,6 +137,14 @@ err = brain.Store(context.Background(), &picobrain.Thought{
     Source:  "app",
 })
 ```
+
+## Tips
+
+- Store concise facts and decisions, not raw transcripts
+- Include `people`, `topics`, `type`, and `action_items` when available
+- Search semantically before asking the user to repeat context
+- Use `observe` prompt at the end of conversations to extract dense observations
+- Use `reflect` prompt periodically to consolidate and prune stale memories
 
 ## Build & Test
 
