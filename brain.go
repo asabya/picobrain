@@ -120,14 +120,14 @@ func (b *Brain) Search(ctx context.Context, query string, limit int) ([]Thought,
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	return searchByVector(b.db, queryEmb, limit)
+	return searchByVector(b.db, queryEmb, limit, "")
 }
 
 func (b *Brain) ListRecent(ctx context.Context, since time.Time, limit int) ([]Thought, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	return listRecent(b.db, since, limit)
+	return listRecent(b.db, since, limit, "")
 }
 
 func (b *Brain) Stats(ctx context.Context) (*BrainStats, error) {
