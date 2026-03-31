@@ -112,7 +112,7 @@ func TestBrainStoreWithPrecomputedEmbedding(t *testing.T) {
 	}
 
 	// Verify the thought was stored (search should find it)
-	results, err := brain.Search(ctx, "Pre-embedded thought", 1)
+	results, err := brain.Search(ctx, "Pre-embedded thought", 1, "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestBrainSearch(t *testing.T) {
 		}
 	}
 
-	results, err := brain.Search(ctx, "Alice frontend", 2)
+	results, err := brain.Search(ctx, "Alice frontend", 2, "")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestBrainListRecent(t *testing.T) {
 	}
 
 	since := time.Now().Add(-1 * time.Hour)
-	results, err := brain.ListRecent(ctx, since, 10)
+	results, err := brain.ListRecent(ctx, since, 10, "")
 	if err != nil {
 		t.Fatalf("ListRecent: %v", err)
 	}
@@ -229,6 +229,117 @@ func TestBrainBulkImportEmpty(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected 0 imported from empty input, got %d", count)
+	}
+}
+
+func TestBrainDelete(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	thought := &Thought{Content: "to be deleted", Source: "test"}
+	if err := brain.Store(ctx, thought); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	err := brain.Delete(ctx, thought.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	results, err := brain.Search(ctx, "deleted", 10, "")
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	for _, r := range results {
+		if r.ID == thought.ID {
+			t.Error("deleted thought should not appear in search results")
+		}
+	}
+}
+
+func TestBrainDeleteNonexistent(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	err := brain.Delete(ctx, "does-not-exist")
+	if err != nil {
+		t.Fatalf("Delete nonexistent should not error: %v", err)
+	}
+}
+
+func TestBrainReflect(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Store two observations
+	brain.Store(ctx, &Thought{Content: "Obs 1: user discussed auth", Type: "observation", Source: "agent"})
+	brain.Store(ctx, &Thought{Content: "Obs 2: user discussed auth flow", Type: "observation", Source: "agent"})
+
+	// Get their IDs
+	since := time.Now().Add(-1 * time.Hour)
+	obs, _ := brain.ListRecent(ctx, since, 10, "observation")
+	if len(obs) != 2 {
+		t.Fatalf("expected 2 observations, got %d", len(obs))
+	}
+
+	// Reflect: consolidate into one
+	newThoughts := []*Thought{
+		{Content: "Consolidated: user discussed auth flow design", Type: "observation", Source: "agent"},
+	}
+	ids := []string{obs[0].ID, obs[1].ID}
+
+	result, err := brain.Reflect(ctx, ids, newThoughts)
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+
+	if len(result.Stored) != 1 {
+		t.Errorf("expected 1 stored, got %d", len(result.Stored))
+	}
+	if len(result.Deleted) != 2 {
+		t.Errorf("expected 2 deleted, got %d", len(result.Deleted))
+	}
+
+	// Verify only the consolidated observation exists
+	recent, _ := brain.ListRecent(ctx, since, 10, "observation")
+	if len(recent) != 1 {
+		t.Fatalf("expected 1 observation after reflect, got %d", len(recent))
+	}
+}
+
+func TestBrainSearchWithTypeFilter(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	brain.Store(ctx, &Thought{Content: "regular thought", Type: "idea", Source: "test"})
+	brain.Store(ctx, &Thought{Content: "observation about coding", Type: "observation", Source: "agent"})
+
+	results, err := brain.Search(ctx, "coding", 10, "observation")
+	if err != nil {
+		t.Fatalf("Search with type: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 observation, got %d", len(results))
+	}
+	if results[0].Type != "observation" {
+		t.Errorf("expected observation type, got %s", results[0].Type)
+	}
+}
+
+func TestBrainListRecentWithTypeFilter(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	brain.Store(ctx, &Thought{Content: "regular thought", Type: "idea", Source: "test"})
+	brain.Store(ctx, &Thought{Content: "observation", Type: "observation", Source: "agent"})
+
+	since := time.Now().Add(-1 * time.Hour)
+	results, err := brain.ListRecent(ctx, since, 10, "observation")
+	if err != nil {
+		t.Fatalf("ListRecent with type: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 observation, got %d", len(results))
 	}
 }
 

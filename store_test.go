@@ -168,7 +168,7 @@ func TestSearchByVector(t *testing.T) {
 	query := make([]float32, 768)
 	query[0] = 1.0
 
-	results, err := searchByVector(db, query, 2)
+	results, err := searchByVector(db, query, 2, "")
 	if err != nil {
 		t.Fatalf("searchByVector: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSearchByVectorEmpty(t *testing.T) {
 	query := make([]float32, 768)
 	query[0] = 1.0
 
-	results, err := searchByVector(db, query, 5)
+	results, err := searchByVector(db, query, 5, "")
 	if err != nil {
 		t.Fatalf("searchByVector on empty db: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestListRecent(t *testing.T) {
 
 	// List all thoughts from the last week
 	since := time.Now().Add(-7 * 24 * time.Hour)
-	results, err := listRecent(db, since, 10)
+	results, err := listRecent(db, since, 10, "")
 	if err != nil {
 		t.Fatalf("listRecent: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestListRecentWithLimit(t *testing.T) {
 	seedThoughts(t, db)
 
 	since := time.Now().Add(-7 * 24 * time.Hour)
-	results, err := listRecent(db, since, 1)
+	results, err := listRecent(db, since, 1, "")
 	if err != nil {
 		t.Fatalf("listRecent: %v", err)
 	}
@@ -290,5 +290,164 @@ func TestGetStatsEmpty(t *testing.T) {
 	}
 	if stats.TotalThoughts != 0 {
 		t.Errorf("expected 0 total on empty db, got %d", stats.TotalThoughts)
+	}
+}
+
+func TestDeleteThought(t *testing.T) {
+	db := testDB(t)
+	seedThoughts(t, db)
+
+	err := deleteThought(db, "t1")
+	if err != nil {
+		t.Fatalf("deleteThought: %v", err)
+	}
+
+	_, err = getThought(db, "t1")
+	if err == nil {
+		t.Fatal("expected error after delete, thought still exists")
+	}
+
+	// Verify other thoughts still exist
+	got, err := getThought(db, "t2")
+	if err != nil {
+		t.Fatalf("t2 should still exist: %v", err)
+	}
+	if got.ID != "t2" {
+		t.Errorf("expected t2, got %s", got.ID)
+	}
+}
+
+func TestDeleteThoughtNotFound(t *testing.T) {
+	db := testDB(t)
+	if err := initSchema(db); err != nil {
+		t.Fatalf("initSchema: %v", err)
+	}
+
+	err := deleteThought(db, "nonexistent")
+	if err != nil {
+		t.Fatalf("deleteThought of nonexistent should not error: %v", err)
+	}
+}
+
+func TestListRecentWithTypeFilter(t *testing.T) {
+	db := testDB(t)
+	seedThoughts(t, db)
+
+	// Add an observation-type thought
+	obs := &Thought{
+		ID:        "obs1",
+		Content:   "User discussed API design patterns",
+		Type:      "observation",
+		Source:    "agent",
+		Embedding: make([]float32, 768),
+		CreatedAt: time.Now(),
+	}
+	if err := insertThought(db, obs); err != nil {
+		t.Fatalf("insert observation: %v", err)
+	}
+
+	since := time.Now().Add(-7 * 24 * time.Hour)
+
+	// Filter for observations only
+	results, err := listRecent(db, since, 10, "observation")
+	if err != nil {
+		t.Fatalf("listRecent with type filter: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 observation, got %d", len(results))
+	}
+	if results[0].ID != "obs1" {
+		t.Errorf("expected obs1, got %s", results[0].ID)
+	}
+
+	// No filter returns all
+	all, err := listRecent(db, since, 10, "")
+	if err != nil {
+		t.Fatalf("listRecent no filter: %v", err)
+	}
+	if len(all) != 4 {
+		t.Errorf("expected 4 total, got %d", len(all))
+	}
+}
+
+func TestReflectStore(t *testing.T) {
+	db := testDB(t)
+	seedThoughts(t, db)
+
+	newThoughts := []*Thought{
+		{
+			ID:        "new1",
+			Content:   "Consolidated: Sarah career + API design decisions",
+			Type:      "observation",
+			Source:    "agent",
+			Embedding: make([]float32, 768),
+			CreatedAt: time.Now(),
+		},
+	}
+
+	err := reflectTx(db, []string{"t1", "t2"}, newThoughts)
+	if err != nil {
+		t.Fatalf("reflectTx: %v", err)
+	}
+
+	// Old thoughts should be gone
+	_, err = getThought(db, "t1")
+	if err == nil {
+		t.Error("t1 should be deleted after reflect")
+	}
+	_, err = getThought(db, "t2")
+	if err == nil {
+		t.Error("t2 should be deleted after reflect")
+	}
+
+	// t3 should still exist
+	got, err := getThought(db, "t3")
+	if err != nil {
+		t.Fatalf("t3 should still exist: %v", err)
+	}
+	if got.ID != "t3" {
+		t.Errorf("expected t3, got %s", got.ID)
+	}
+
+	// New thought should exist
+	got, err = getThought(db, "new1")
+	if err != nil {
+		t.Fatalf("new1 should exist: %v", err)
+	}
+	if got.Content != newThoughts[0].Content {
+		t.Errorf("content mismatch")
+	}
+}
+
+func TestSearchByVectorWithTypeFilter(t *testing.T) {
+	db := testDB(t)
+	seedThoughts(t, db)
+
+	obs := &Thought{
+		ID:        "obs1",
+		Content:   "API design discussion observations",
+		Type:      "observation",
+		Source:    "agent",
+		Embedding: make([]float32, 768),
+		CreatedAt: time.Now(),
+	}
+	obs.Embedding[3] = 1.0
+	if err := insertThought(db, obs); err != nil {
+		t.Fatalf("insert observation: %v", err)
+	}
+
+	query := make([]float32, 768)
+	query[3] = 1.0
+
+	// Filter for observations only
+	results, err := searchByVector(db, query, 10, "observation")
+	if err != nil {
+		t.Fatalf("searchByVector with type filter: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 observation result, got %d", len(results))
+	}
+	if results[0].ID != "obs1" {
+		t.Errorf("expected obs1, got %s", results[0].ID)
 	}
 }

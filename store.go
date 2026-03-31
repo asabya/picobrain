@@ -93,6 +93,52 @@ func insertThought(db *sql.DB, t *Thought) error {
 	return tx.Commit()
 }
 
+func deleteThoughtTx(exec dbExecer, id string) error {
+	if _, err := exec.Exec("DELETE FROM thoughts WHERE id = ?", id); err != nil {
+		return fmt.Errorf("delete from thoughts: %w", err)
+	}
+	if _, err := exec.Exec("DELETE FROM thought_vectors WHERE id = ?", id); err != nil {
+		return fmt.Errorf("delete from thought_vectors: %w", err)
+	}
+	return nil
+}
+
+func reflectTx(db *sql.DB, deleteIDs []string, newThoughts []*Thought) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, id := range deleteIDs {
+		if err := deleteThoughtTx(tx, id); err != nil {
+			return fmt.Errorf("delete thought %s: %w", id, err)
+		}
+	}
+
+	for _, t := range newThoughts {
+		if err := insertThoughtTx(tx, t); err != nil {
+			return fmt.Errorf("insert reflected thought: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func deleteThought(db *sql.DB, id string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := deleteThoughtTx(tx, id); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func getThought(db *sql.DB, id string) (*Thought, error) {
 	var t Thought
 	var peopleStr, topicsStr, actionItemsStr sql.NullString
@@ -122,10 +168,16 @@ func getThought(db *sql.DB, id string) (*Thought, error) {
 	return &t, nil
 }
 
-func searchByVector(db *sql.DB, embedding []float32, limit int) ([]Thought, error) {
+func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType string) ([]Thought, error) {
 	vec, err := sqlite_vec.SerializeFloat32(embedding)
 	if err != nil {
 		return nil, fmt.Errorf("serialize query vector: %w", err)
+	}
+
+	// When filtering by type, fetch more to account for filtered-out results
+	searchLimit := limit
+	if thoughtType != "" {
+		searchLimit = limit * 3
 	}
 
 	rows, err := db.Query(`
@@ -136,23 +188,54 @@ func searchByVector(db *sql.DB, embedding []float32, limit int) ([]Thought, erro
 		WHERE v.embedding MATCH ?
 		AND k = ?
 		ORDER BY v.distance
-	`, vec, limit)
+	`, vec, searchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("vector search: %w", err)
 	}
 	defer rows.Close()
 
-	return scanThoughts(rows, true)
+	all, err := scanThoughts(rows, true)
+	if err != nil {
+		return nil, err
+	}
+
+	if thoughtType == "" {
+		return all, nil
+	}
+
+	// Filter by type
+	filtered := make([]Thought, 0, limit)
+	for _, t := range all {
+		if t.Type == thoughtType {
+			filtered = append(filtered, t)
+			if len(filtered) >= limit {
+				break
+			}
+		}
+	}
+	return filtered, nil
 }
 
-func listRecent(db *sql.DB, since time.Time, limit int) ([]Thought, error) {
-	rows, err := db.Query(`
-		SELECT id, content, people, topics, type, action_items, source, created_at
-		FROM thoughts
-		WHERE created_at >= ?
-		ORDER BY created_at DESC
-		LIMIT ?
-	`, since.Format("2006-01-02 15:04:05"), limit)
+func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]Thought, error) {
+	var rows *sql.Rows
+	var err error
+	if thoughtType != "" {
+		rows, err = db.Query(`
+			SELECT id, content, people, topics, type, action_items, source, created_at
+			FROM thoughts
+			WHERE created_at >= ? AND type = ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		`, since.Format("2006-01-02 15:04:05"), thoughtType, limit)
+	} else {
+		rows, err = db.Query(`
+			SELECT id, content, people, topics, type, action_items, source, created_at
+			FROM thoughts
+			WHERE created_at >= ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		`, since.Format("2006-01-02 15:04:05"), limit)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list recent: %w", err)
 	}
