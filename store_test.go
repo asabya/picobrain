@@ -370,6 +370,55 @@ func TestListRecentWithTypeFilter(t *testing.T) {
 	}
 }
 
+func TestReflectStore(t *testing.T) {
+	db := testDB(t)
+	seedThoughts(t, db)
+
+	newThoughts := []*Thought{
+		{
+			ID:        "new1",
+			Content:   "Consolidated: Sarah career + API design decisions",
+			Type:      "observation",
+			Source:    "agent",
+			Embedding: make([]float32, 768),
+			CreatedAt: time.Now(),
+		},
+	}
+
+	err := reflectTx(db, []string{"t1", "t2"}, newThoughts)
+	if err != nil {
+		t.Fatalf("reflectTx: %v", err)
+	}
+
+	// Old thoughts should be gone
+	_, err = getThought(db, "t1")
+	if err == nil {
+		t.Error("t1 should be deleted after reflect")
+	}
+	_, err = getThought(db, "t2")
+	if err == nil {
+		t.Error("t2 should be deleted after reflect")
+	}
+
+	// t3 should still exist
+	got, err := getThought(db, "t3")
+	if err != nil {
+		t.Fatalf("t3 should still exist: %v", err)
+	}
+	if got.ID != "t3" {
+		t.Errorf("expected t3, got %s", got.ID)
+	}
+
+	// New thought should exist
+	got, err = getThought(db, "new1")
+	if err != nil {
+		t.Fatalf("new1 should exist: %v", err)
+	}
+	if got.Content != newThoughts[0].Content {
+		t.Errorf("content mismatch")
+	}
+}
+
 func TestSearchByVectorWithTypeFilter(t *testing.T) {
 	db := testDB(t)
 	seedThoughts(t, db)

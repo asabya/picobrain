@@ -103,6 +103,28 @@ func deleteThoughtTx(exec dbExecer, id string) error {
 	return nil
 }
 
+func reflectTx(db *sql.DB, deleteIDs []string, newThoughts []*Thought) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, id := range deleteIDs {
+		if err := deleteThoughtTx(tx, id); err != nil {
+			return fmt.Errorf("delete thought %s: %w", id, err)
+		}
+	}
+
+	for _, t := range newThoughts {
+		if err := insertThoughtTx(tx, t); err != nil {
+			return fmt.Errorf("insert reflected thought: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 func deleteThought(db *sql.DB, id string) error {
 	tx, err := db.Begin()
 	if err != nil {
