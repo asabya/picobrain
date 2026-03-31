@@ -5,62 +5,21 @@ on:
       - v*
 jobs:
   release:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-    runs-on: ${{ matrix.goos }}-latest
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: checkout code
         uses: actions/checkout@v4
-      - name: Set up Go
+        with:
+          submodules: 'true'
+      - run: git fetch --prune --unshallow
+      - name: setup dependencies
         uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: build --snapshot --clean --single-target
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "1"
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: picobrain-mcp-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*
-          retention-days: 5
-
-  create-release:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Create checksums
+      - name: release dry run
+        run: make release-dry-run
+      - name: setup release environment
         run: |
-          cd dist
-          sha256sum picobrain-mcp-* > checksums.txt
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/**/*
-          checksum_files: dist/checksums.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo 'GITHUB_TOKEN=${{secrets.GITHUB_TOKEN}}' > .release-env
+      - name: release publish
+        run: make release
