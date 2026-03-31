@@ -5,21 +5,59 @@ on:
       - v*
 jobs:
   release:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.goos }}-latest
     steps:
-      - name: checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: 'true'
-      - run: git fetch --prune --unshallow
-      - name: setup dependencies
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.25"
-      - name: release dry run
-        run: make release-dry-run
-      - name: setup release environment
-        run: |-
-          echo 'GITHUB_TOKEN=${{secrets.GITHUB_TOKEN}}' > .release-env
-      - name: release publish
-        run: make release
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o dist/picobrain-mcp-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/picobrain-mcp
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: picobrain-mcp-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 5
+
+  create-release:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum picobrain-mcp-* > checksums.txt
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          checksum_files: dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
