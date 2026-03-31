@@ -292,3 +292,39 @@ func TestGetStatsEmpty(t *testing.T) {
 		t.Errorf("expected 0 total on empty db, got %d", stats.TotalThoughts)
 	}
 }
+
+func TestDeleteThought(t *testing.T) {
+	db := testDB(t)
+	seedThoughts(t, db)
+
+	err := deleteThought(db, "t1")
+	if err != nil {
+		t.Fatalf("deleteThought: %v", err)
+	}
+
+	_, err = getThought(db, "t1")
+	if err == nil {
+		t.Fatal("expected error after delete, thought still exists")
+	}
+
+	// Verify other thoughts still exist
+	got, err := getThought(db, "t2")
+	if err != nil {
+		t.Fatalf("t2 should still exist: %v", err)
+	}
+	if got.ID != "t2" {
+		t.Errorf("expected t2, got %s", got.ID)
+	}
+}
+
+func TestDeleteThoughtNotFound(t *testing.T) {
+	db := testDB(t)
+	if err := initSchema(db); err != nil {
+		t.Fatalf("initSchema: %v", err)
+	}
+
+	err := deleteThought(db, "nonexistent")
+	if err != nil {
+		t.Fatalf("deleteThought of nonexistent should not error: %v", err)
+	}
+}

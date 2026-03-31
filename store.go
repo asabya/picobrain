@@ -93,6 +93,23 @@ func insertThought(db *sql.DB, t *Thought) error {
 	return tx.Commit()
 }
 
+func deleteThought(db *sql.DB, id string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM thoughts WHERE id = ?", id); err != nil {
+		return fmt.Errorf("delete from thoughts: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM thought_vectors WHERE id = ?", id); err != nil {
+		return fmt.Errorf("delete from thought_vectors: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 func getThought(db *sql.DB, id string) (*Thought, error) {
 	var t Thought
 	var peopleStr, topicsStr, actionItemsStr sql.NullString
