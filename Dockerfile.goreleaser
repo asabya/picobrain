@@ -22,11 +22,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     curl -fSL -o /tmp/llama.tar.gz \
       "https://github.com/ggml-org/llama.cpp/releases/download/b${LLAMA_CPP_VERSION}/llama-b${LLAMA_CPP_VERSION}-bin-ubuntu-${LLAMA_ARCH}.tar.gz" && \
     mkdir -p /tmp/llama && \
-    tar xzf /tmp/llama.tar.gz --strip-components=1 -C /tmp/llama/ && \
-    cp /tmp/llama/llama-server /usr/local/bin/ && \
-    cp /tmp/llama/*.so* /usr/local/lib/ && \
-    ldconfig && \
-    rm -rf /tmp/llama /tmp/llama.tar.gz
+    tar xzf /tmp/llama.tar.gz --strip-components=1 -C /tmp/llama/
 
 # Runtime stage
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
@@ -44,12 +40,12 @@ RUN mkdir -p /data/models
 
 # picobrain binary is injected by goreleaser
 COPY picobrain /usr/local/bin/picobrain
-COPY --from=llama-download /usr/local/bin/llama-server /usr/local/bin/llama-server
-COPY --from=llama-download /usr/local/lib/lib*.so* /usr/local/lib/
 
-RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/llama.conf && ldconfig
+# Copy llama-server and all .so files to /usr/local/bin/ so ggml_backend_load_all can find them
+COPY --from=llama-download /tmp/llama/llama-server /usr/local/bin/llama-server
+COPY --from=llama-download /tmp/llama/*.so* /usr/local/bin/
 
-ENV LD_LIBRARY_PATH=/usr/local/lib
+RUN echo "/usr/local/bin" > /etc/ld.so.conf.d/llama.conf && ldconfig
 
 VOLUME ["/data"]
 
