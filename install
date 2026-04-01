@@ -225,8 +225,8 @@ download_llama_server() {
     local src_dir=""
     if [ -f "$tmp_dir/$server_binary" ]; then
         src_dir="$tmp_dir"
-    elif [ -f "$tmp_dir/llama-b8606/$server_binary" ]; then
-        src_dir="$tmp_dir/llama-b8606"
+    elif [ -f "$tmp_dir/${latest_tag}/$server_binary" ]; then
+        src_dir="$tmp_dir/${latest_tag}"
     else
         print_msg error "llama-server binary not found in archive"
         ls -la "$tmp_dir" || true
@@ -236,7 +236,7 @@ download_llama_server() {
     cp "$src_dir/$server_binary" "${INSTALL_DIR}/llama-server"
     chmod 755 "${INSTALL_DIR}/llama-server"
 
-    for lib in "$src_dir"/*.dylib; do
+    for lib in "$src_dir"/*.dylib "$src_dir"/*.so; do
         if [ -f "$lib" ]; then
             cp "$lib" "${INSTALL_DIR}/"
         fi
