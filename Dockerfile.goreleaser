@@ -42,8 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN mkdir -p /data/models
 
-# picobrain-mcp binary is injected by goreleaser
-COPY picobrain-mcp /usr/local/bin/picobrain-mcp
+# picobrain binary is injected by goreleaser
+COPY picobrain /usr/local/bin/picobrain
 COPY --from=llama-download /usr/local/bin/llama-server /usr/local/bin/llama-server
 COPY --from=llama-download /usr/local/lib/lib*.so* /usr/local/lib/
 
@@ -53,4 +53,4 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 
 VOLUME ["/data"]
 
-ENTRYPOINT ["picobrain-mcp"]
+ENTRYPOINT ["picobrain"]
