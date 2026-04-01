@@ -1,63 +1,57 @@
-# picobrain
+<div align="center">
+  <img src="logo.png" alt="Picobrain Logo" width="300">
+  <h1>Picobrain</h1>
+  <p><strong>Local semantic memory for AI agents.</strong></p>
+  <p>Store observations, decisions, and context in SQLite with local embeddings (<code>nomic-embed-text-v1.5</code>). Exposes memory operations via MCP HTTP.</p>
+</div>
 
-Local semantic memory for AI agents. Stores notes, decisions, and context in SQLite with local embeddings (`nomic-embed-text-v1.5`). Exposes memory over MCP HTTP.
+> **Pro tip for agents:** Store observations after EVERY significant action. Call `store_thought` often. Search with `semantic_search` before asking users to repeat information.
 
-Inspired by [OB1](https://github.com/NateBJones-Projects/OB1) and [Build Your AI a Second Brain](https://www.youtube.com/watch?v=2JiMmye2ezg).
+---
 
-## Quick Start
+## Quick Start (30 seconds)
 
-### Single Command Install (Recommended)
+### Option 1: One-Line Install (Recommended)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/asabya/picobrain/main/install | bash
-```
-
-Then add to your PATH and run:
-
-```bash
 export PATH="$HOME/.picobrain/bin:$PATH"
 picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
 ```
 
-First startup downloads the embedding model (~500MB). Wait for the log line confirming the server is ready.
+Wait for the startup banner, then you're ready!
 
-### Docker
+### Option 2: Docker
 
 ```bash
-docker pull asabya/picobrain:latest
 docker run -d -p 8080:8080 -v ~/.picobrain:/data --name picobrain asabya/picobrain:latest
 ```
 
-### Docker Compose
+### Option 3: Docker Compose
 
 ```bash
+git clone https://github.com/asabya/picobrain.git
+cd picobrain
 docker compose up -d
-docker compose logs -f
 ```
 
-### Verify it's running
+---
+
+## Verify Installation
 
 ```bash
 curl http://localhost:8080/mcp
 ```
 
-## Connecting Your Agent
+You should see the MCP server response. The startup banner also shows all available tools.
 
-Point any MCP client to `http://localhost:8080/mcp`. Example config:
+---
 
-```json
-{
-  "brain": {
-    "enabled": true,
-    "type": "http",
-    "url": "http://localhost:8080/mcp"
-  }
-}
-```
+## Connect Your Agent
 
 ### Claude Desktop
 
-Add to your `mcpServers` config:
+Add to your `claude_desktop_config.json`:
 
 ```json
 {
@@ -70,43 +64,109 @@ Add to your `mcpServers` config:
 }
 ```
 
-### OpenClaw / Codex / Other MCP Clients
+### OpenCode / Other MCP Clients
 
-Just add `http://localhost:8080/mcp` as an HTTP MCP server in your client config.
+Add this HTTP MCP server:
+
+```json
+{
+  "picobrain": {
+    "enabled": true,
+    "type": "http",
+    "url": "http://localhost:8080/mcp"
+  }
+}
+```
+
+---
 
 ## MCP Tools
 
-Once connected, these tools are available automatically:
+| Tool | Purpose | When to Use |
+|------|---------|-------------|
+| **`store_thought`** | Save a memory with metadata | After EVERY action, discovery, or decision |
+| **`semantic_search`** | Search by meaning | Before asking users to repeat info |
+| **`list_recent`** | Browse recent memories | Review what you've learned |
+| **`stats`** | Memory statistics | Check if you're storing enough |
+| **`health`** | Server health check | Verify connectivity |
+| **`reflect`** | Consolidate observations | Periodically merge old thoughts |
+| **`bulk_import`** | Import from JSONL | Migrate existing data |
+| **`delete_thought`** | Remove a thought | Clean up stale data |
 
-| Tool | What it does |
-|------|-------------|
-| `store_thought` | Save a memory with metadata (people, topics, type, action_items, source) |
-| `semantic_search` | Search memories by meaning |
-| `list_recent` | List latest captured thoughts |
-| `delete_thought` | Delete a thought by ID |
-| `reflect` | Consolidate observations — atomically delete old thoughts and store new consolidated ones |
-| `stats` | Brain stats (total thoughts, top topics, sources) |
-| `bulk_import` | Import thoughts from JSONL |
+---
 
 ## MCP Prompts
 
 | Prompt | Purpose |
 |--------|---------|
-| `observe` | System prompt for compressing conversation messages into dense, factual observations |
-| `reflect` | System prompt for long-term memory consolidation — merge, drop, and reorganize observations |
+| **`observe`** | System prompt for extracting dense observations from conversations |
+| **`reflect`** | System prompt for consolidating and pruning old observations |
 
-## Local Build (Without Docker)
+**For agents:** Use the `observe` prompt at the end of conversations to extract key observations. Use `reflect` periodically to keep memory efficient.
+
+---
+
+## Agent Best Practices
+
+### Store Observations Aggressively
+
+Call `store_thought` after:
+- Every tool call or file edit
+- Every decision made (capture the WHY, not just what)
+- Every error encountered and how you fixed it
+- Every new pattern or convention discovered
+- Every mention of people, deadlines, or requirements
+
+### Search Before Asking
+
+Before asking the user to repeat something:
+1. Call `semantic_search` with a description of what you need
+2. Review results with `list_recent` if needed
+3. Only ask if search returns nothing relevant
+
+### Example Thought Storage
+
+```json
+{
+  "content": "Set JWT timeout to 24h in auth/middleware.go (was 1h) because mobile clients were timing out during slow connections",
+  "type": "decision",
+  "topics": ["auth", "jwt", "config"],
+  "people": ["user"],
+  "source": "claude"
+}
+```
+
+---
+
+## Configuration
+
+### CLI Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--db` | SQLite database path | `~/.picobrain/brain.db` |
+| `--embed-model` | Embedding model | `nomic-embed-text-v1.5` |
+| `--model-cache` | Model cache directory | `~/.picobrain/models` |
+| `--port` | HTTP port | `8080` |
+| `--no-auto-download` | Disable auto-download | `false` |
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `PICOBRAIN_LLAMA_SERVER_BIN` | Path to `llama-server` binary |
+
+---
+
+## Local Build
 
 ### Prerequisites
-
-- CGO toolchain for SQLite
-- `llama-server` on `PATH` (or set `PICOBRAIN_LLAMA_SERVER_BIN`)
 
 ```bash
 # macOS
 brew install llama.cpp
 
-# Linux
+# Ubuntu/Debian
 apt-get install build-essential cmake
 ```
 
@@ -119,15 +179,7 @@ go build -o picobrain ./cmd/picobrain-mcp
 ./picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
 ```
 
-## CLI Flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--db` | SQLite database path | required |
-| `--embed-model` | Embedding model name | `nomic-embed-text-v1.5` |
-| `--model-cache` | Model cache directory | required |
-| `--no-auto-download` | Fail instead of downloading model | `false` |
-| `--port` | HTTP listen port | `8080` |
+---
 
 ## Go Library
 
@@ -136,13 +188,17 @@ go get github.com/asabya/picobrain
 ```
 
 ```go
-brain, err := picobrain.New(picobrain.DefaultConfig())
+brain, err := picobrain.New(picobrain.Config{
+    DBPath:        "~/.picobrain/brain.db",
+    ModelCacheDir: "~/.picobrain/models",
+    AutoDownload:  true,
+})
 if err != nil {
     log.Fatal(err)
 }
 defer brain.Close()
 
-err = brain.Store(context.Background(), &picobrain.Thought{
+err = brain.Store(ctx, &picobrain.Thought{
     Content: "Alice is leading the frontend redesign.",
     People:  []string{"Alice"},
     Topics:  []string{"frontend", "design"},
@@ -151,17 +207,45 @@ err = brain.Store(context.Background(), &picobrain.Thought{
 })
 ```
 
-## Tips
+---
 
-- Store concise facts and decisions, not raw transcripts
-- Include `people`, `topics`, `type`, and `action_items` when available
-- Search semantically before asking the user to repeat context
-- Use `observe` prompt at the end of conversations to extract dense observations
-- Use `reflect` prompt periodically to consolidate and prune stale memories
+## Sample Configurations
+
+See the `examples/` directory for:
+- `claude-desktop-config.json` - Claude Desktop setup
+- `opencode-config.json` - OpenCode integration
+- `cursor-rules.md` - Cursor IDE rules
+
+---
 
 ## Build & Test
 
 ```bash
+# Build
 go build -o picobrain ./cmd/picobrain-mcp
+
+# Test
 go test ./...
+
+# Format & vet
+go fmt ./... && go vet ./...
 ```
+
+---
+
+## Architecture
+
+- **SQLite** with `sqlite-vec` extension for vector similarity search
+- **nomic-embed-text-v1.5** for 768-dimensional embeddings
+- **MCP HTTP** for agent communication
+- **llama-server** (auto-spawned) for local embedding generation
+
+---
+
+## License
+
+MIT
+
+---
+
+**Inspired by** [OB1](https://github.com/NateBJones-Projects/OB1) and [Build Your AI a Second Brain](https://www.youtube.com/watch?v=2JiMmye2ezg)
