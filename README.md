@@ -6,16 +6,29 @@ Inspired by [OB1](https://github.com/NateBJones-Projects/OB1) and [Build Your AI
 
 ## Quick Start
 
-### Docker (Recommended)
+### Single Command Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/asabya/picobrain/main/install | bash
+```
+
+Then add to your PATH and run:
+
+```bash
+export PATH="$HOME/.picobrain/bin:$PATH"
+picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
+```
+
+First startup downloads the embedding model (~500MB). Wait for the log line confirming the server is ready.
+
+### Docker
 
 ```bash
 docker pull asabya/picobrain:latest
 docker run -d -p 8080:8080 -v ~/.picobrain:/data --name picobrain asabya/picobrain:latest
 ```
 
-First startup downloads the embedding model (~500MB). Wait for the log line confirming the server is ready.
-
-### Or with Docker Compose
+### Docker Compose
 
 ```bash
 docker compose up -d
@@ -102,8 +115,8 @@ apt-get install build-essential cmake
 ```bash
 git clone https://github.com/asabya/picobrain.git
 cd picobrain
-go build -o picobrain-mcp ./cmd/picobrain-mcp
-./picobrain-mcp --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
+go build -o picobrain ./cmd/picobrain-mcp
+./picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
 ```
 
 ## CLI Flags
@@ -149,6 +162,6 @@ err = brain.Store(context.Background(), &picobrain.Thought{
 ## Build & Test
 
 ```bash
-go build -o picobrain-mcp ./cmd/picobrain-mcp
+go build -o picobrain ./cmd/picobrain-mcp
 go test ./...
 ```

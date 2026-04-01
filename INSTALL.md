@@ -14,7 +14,22 @@ picobrain exposes 5 MCP tools: `store_thought`, `semantic_search`, `list_recent`
 
 ## Step 1: Start the brain
 
-### Preferred: Docker (keeps the embedder self-contained)
+### Preferred: Single Command Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/asabya/picobrain/main/install | bash
+```
+
+Then add to your PATH and run:
+
+```bash
+export PATH="$HOME/.picobrain/bin:$PATH"
+picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
+```
+
+This downloads both `picobrain` and `llama-server` binaries to `~/.picobrain/bin`.
+
+### Docker (keeps the embedder self-contained)
 
 ```bash
 docker pull asabya/picobrain
@@ -32,8 +47,8 @@ Alternatively, build locally:
 ### Optional: Local binary (manual control)
 
 ```bash
-go build -o picobrain-mcp ./cmd/picobrain-mcp
-./picobrain-mcp --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
+go build -o picobrain ./cmd/picobrain-mcp
+./picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
 ```
 
 Set `PICOBRAIN_LLAMA_SERVER_BIN` if your `llama-server` binary lives outside `PATH`. Use `--no-auto-download` to prevent runtime downloads when running in air-gapped environments.
@@ -86,7 +101,9 @@ picobrain registers 5 tools automatically discovered by any MCP client:
 
 ## Updating & Uninstall
 
-- Re-run `docker pull asabya/picobrain` or `./scripts/run-docker.sh` to update the Docker image.
-- For local binaries, `go build` again and restart the server with the same flags.
+- Re-run the install command to update: `curl -fsSL https://raw.githubusercontent.com/asabya/picobrain/main/install | bash`
+- For Docker: `docker pull asabya/picobrain` or `./scripts/run-docker.sh`
+- For local build: `go build` again and restart the server with the same flags.
 - Stop the Docker stack with `docker compose down`.
 - Remove the Docker volume or delete the database file to uninstall data; deleting the repo is optional.
+- To uninstall the binary: `rm -rf ~/.picobrain`

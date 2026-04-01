@@ -14,7 +14,7 @@ env:
 builds:
   - id: linux-amd64
     main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
+    binary: picobrain
     goos:
       - linux
     goarch:
@@ -30,7 +30,7 @@ builds:
 
   - id: linux-arm64
     main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
+    binary: picobrain
     goos:
       - linux
     goarch:
@@ -46,7 +46,7 @@ builds:
   
   - id: darwin-amd64
     main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
+    binary: picobrain
     goos:
       - darwin
     goarch:
@@ -62,7 +62,7 @@ builds:
       
   - id: darwin-arm64
     main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
+    binary: picobrain
     goos:
       - darwin
     goarch:
@@ -78,7 +78,7 @@ builds:
 
   - id: windows-amd64
     main: ./cmd/picobrain-mcp
-    binary: picobrain-mcp
+    binary: picobrain
     goos:
       - windows
     goarch:

@@ -1,0 +1,348 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MUTED='\033[0;2m'
+RED='\033[0;31m'
+ORANGE='\033[38;5;214m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+APP=picobrain
+REPO=asabya/picobrain
+LLAMA_REPO=ggml-org/llama.cpp
+
+usage() {
+    cat <<EOF
+PicoBrain Installer
+
+Usage: install [options]
+
+Options:
+    -h, --help              Display this help message
+    -v, --version <version> Install a specific version (e.g., 0.1.0)
+    -b, --binary <path>     Install picobrain from a local binary
+        --no-modify-path    Don't modify shell config files
+
+Examples:
+    curl -fsSL https://raw.githubusercontent.com/$REPO/main/install | bash
+    curl -fsSL https://raw.githubusercontent.com/$REPO/main/install | bash -s -- --version 0.1.0
+EOF
+}
+
+requested_version=""
+no_modify_path=false
+binary_path=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -v|--version)
+            requested_version="$2"
+            shift 2
+            ;;
+        -b|--binary)
+            binary_path="$2"
+            shift 2
+            ;;
+        --no-modify-path)
+            no_modify_path=true
+            shift
+            ;;
+        *)
+            echo -e "${ORANGE}Warning: Unknown option '$1'${NC}" >&2
+            shift
+            ;;
+    esac
+done
+
+INSTALL_DIR="$HOME/.picobrain/bin"
+mkdir -p "$INSTALL_DIR"
+
+print_msg() {
+    local level=$1
+    local message=$2
+    local color=""
+    case $level in
+        info) color="${NC}" ;;
+        warning) color="${ORANGE}" ;;
+        error) color="${RED}" ;;
+        success) color="${GREEN}" ;;
+    esac
+    echo -e "${color}${message}${NC}"
+}
+
+is_musl() {
+    if [ -f /etc/alpine-release ]; then
+        return 0
+    fi
+    if command -v ldd >/dev/null 2>&1; then
+        if ldd --version 2>&1 | grep -qi musl; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+detect_os() {
+    local raw_os=$(uname -s)
+    local os=$(echo "$raw_os" | tr '[:upper:]' '[:lower:]')
+    case "$raw_os" in
+        Darwin*) os="darwin" ;;
+        Linux*) os="linux" ;;
+        MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+    esac
+    echo "$os"
+}
+
+detect_arch() {
+    local arch=$(uname -m)
+    case "$arch" in
+        aarch64|arm64) echo "arm64" ;;
+        x86_64) echo "amd64" ;;
+        *) echo "$arch" ;;
+    esac
+}
+
+get_llama_url() {
+    local os=$1
+    local arch=$2
+
+    case "$os" in
+        darwin)
+            case "$arch" in
+                arm64) echo "macos-arm64" ;;
+                x64) echo "macos-x64" ;;
+            esac
+            ;;
+        linux)
+            case "$arch" in
+                arm64) echo "ubuntu-arm64" ;;
+                x64) echo "ubuntu-x64" ;;
+            esac
+            ;;
+        windows)
+            case "$arch" in
+                arm64) echo "win-cpu-arm64" ;;
+                x64) echo "win-cpu-x64" ;;
+            esac
+            ;;
+    esac
+}
+
+download_with_progress() {
+    local url=$1
+    local output=$2
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -# -L -o "$output" "$url"
+    else
+        echo -e "${RED}Error: curl is required but not installed.${NC}"
+        exit 1
+    fi
+}
+
+download_picobrain() {
+    local version=$1
+    local os=$2
+    local arch=$3
+    local tmp_dir="${TMPDIR:-/tmp}/picobrain_install_$$"
+    mkdir -p "$tmp_dir"
+
+    local filename="${APP}_${version}_${os}_${arch}"
+    if [ "$os" = "windows" ]; then
+        filename="${filename}.exe"
+    fi
+    print_msg info "${MUTED}Installing ${NC}$APP ${MUTED}version: ${NC}$version"
+
+    local url
+    if [ -n "$requested_version" ]; then
+        url="https://github.com/$REPO/releases/download/v${version}/${filename}"
+    else
+        url="https://github.com/$REPO/releases/latest/download/${filename}"
+    fi
+
+    echo -e "${MUTED}Downloading from: ${NC}$url"
+    download_with_progress "$url" "$tmp_dir/$filename"
+
+    if [ "$os" = "windows" ]; then
+        mv "$tmp_dir/$filename" "${INSTALL_DIR}/${APP}.exe"
+        chmod 755 "${INSTALL_DIR}/${APP}.exe"
+    else
+        mv "$tmp_dir/$filename" "${INSTALL_DIR}/${APP}"
+        chmod 755 "${INSTALL_DIR}/${APP}"
+    fi
+
+    rm -rf "$tmp_dir"
+}
+
+download_llama_server() {
+    local os=$1
+    local arch=$2
+    local tmp_dir="${TMPDIR:-/tmp}/picobrain_install_$$"
+    mkdir -p "$tmp_dir"
+
+    print_msg info "${MUTED}Downloading llama-server..."
+
+    local build_variant
+    build_variant=$(get_llama_url "$os" "$arch")
+
+    local latest_tag
+    latest_tag=$(curl -s https://api.github.com/repos/$LLAMA_REPO/releases/latest | grep '"tag_name"' | sed -n 's/.*"\([^"]*\)".*/\1/p')
+
+    if [ -z "$latest_tag" ]; then
+        print_msg error "Failed to fetch latest llama.cpp release"
+        exit 1
+    fi
+
+    local ext="tar.gz"
+    [ "$os" = "windows" ] && ext="zip"
+
+    local filename="llama-${latest_tag}-bin-${build_variant}.${ext}"
+    local url="https://github.com/$LLAMA_REPO/releases/download/${latest_tag}/${filename}"
+
+    echo -e "${MUTED}Downloading from: ${NC}$url"
+    download_with_progress "$url" "$tmp_dir/$filename"
+
+    if [ "$os" = "linux" ]; then
+        tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
+    elif [ "$os" = "darwin" ]; then
+        tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
+    else
+        unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
+    fi
+
+    local server_binary
+    case "$os" in
+        windows) server_binary="llama-server.exe" ;;
+        *) server_binary="llama-server" ;;
+    esac
+
+    local src_binary=""
+    local src_binary=""
+    local src_dir=""
+    if [ -f "$tmp_dir/$server_binary" ]; then
+        src_dir="$tmp_dir"
+    elif [ -f "$tmp_dir/llama-b8606/$server_binary" ]; then
+        src_dir="$tmp_dir/llama-b8606"
+    else
+        print_msg error "llama-server binary not found in archive"
+        ls -la "$tmp_dir" || true
+        exit 1
+    fi
+
+    cp "$src_dir/$server_binary" "${INSTALL_DIR}/llama-server"
+    chmod 755 "${INSTALL_DIR}/llama-server"
+
+    for lib in "$src_dir"/*.dylib; do
+        if [ -f "$lib" ]; then
+            cp "$lib" "${INSTALL_DIR}/"
+        fi
+    done
+
+    rm -rf "$tmp_dir"
+}
+
+install_from_binary() {
+    local path=$1
+    if [ ! -f "$path" ]; then
+        print_msg error "Binary not found at ${path}"
+        exit 1
+    fi
+    cp "$path" "${INSTALL_DIR}/${APP}"
+    chmod 755 "${INSTALL_DIR}/${APP}"
+}
+
+add_to_path() {
+    local config_file=$1
+    local command=$2
+
+    if grep -Fxq "$command" "$config_file" 2>/dev/null; then
+        print_msg info "Command already exists in $config_file, skipping."
+    elif [[ -w "$config_file" ]]; then
+        echo -e "\n# picobrain" >> "$config_file"
+        echo "$command" >> "$config_file"
+        print_msg success "Added picobrain to \$PATH in $config_file"
+    else
+        print_msg warning "Cannot write to $config_file. Manually add:"
+        print_msg info "  $command"
+    fi
+}
+
+modify_path() {
+    if [ "$no_modify_path" = true ]; then
+        return 0
+    fi
+
+    current_shell=$(basename "$SHELL")
+    case "$current_shell" in
+        fish)  config_file="$HOME/.config/fish/config.fish" ;;
+        zsh)   config_file="${ZDOTDIR:-$HOME}/.zshrc" ;;
+        bash)  config_file="$HOME/.bashrc" ;;
+        *)     config_file="$HOME/.profile" ;;
+    esac
+
+    if [[ -z "$config_file" ]] || [[ ! -f "$config_file" ]]; then
+        config_file="$HOME/.profile"
+    fi
+
+    if [[ ":$PATH:" == *":$INSTALL_DIR:"* ]]; then
+        return 0
+    fi
+
+    local path_cmd
+    case "$current_shell" in
+        fish)  path_cmd="fish_add_path $INSTALL_DIR" ;;
+        *)     path_cmd="export PATH=$INSTALL_DIR:\$PATH" ;;
+    esac
+
+    if [[ -f "$config_file" ]]; then
+        add_to_path "$config_file" "$path_cmd"
+    else
+        print_msg warning "No shell config found. Manually add to PATH:"
+        print_msg info "  export PATH=$INSTALL_DIR:\$PATH"
+    fi
+}
+
+main() {
+    local os=$(detect_os)
+    local arch=$(detect_arch)
+
+    print_msg info "Detected: $os/$arch"
+
+    if is_musl; then
+        print_msg error "This installer does not support musl-based Linux (Alpine)."
+        print_msg info "Please use Docker instead:"
+        print_msg info "  docker run -d -p 8080:8080 -v ~/.picobrain:/data --name picobrain asabya/picobrain:latest"
+        exit 1
+    fi
+
+    local specific_version
+    if [ -n "$requested_version" ]; then
+        specific_version="$requested_version"
+    else
+        specific_version=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep '"tag_name"' | sed -n 's/.*"v\([^"]*\)".*/\1/p')
+    fi
+
+    if [ -n "$binary_path" ]; then
+        install_from_binary "$binary_path"
+    else
+        download_picobrain "$specific_version" "$os" "$arch"
+        download_llama_server "$os" "$arch"
+    fi
+
+    modify_path
+
+    echo ""
+    print_msg success "PicoBrain installed successfully!"
+    echo ""
+    echo -e "${MUTED}Next steps:${NC}"
+    echo -e "  1. Add to PATH: export PATH=\$HOME/.picobrain/bin:\$PATH"
+    echo -e "  2. Restart your shell"
+    echo -e "  3. Run: picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080"
+    echo ""
+}
+
+main "$@"
