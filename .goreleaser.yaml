@@ -104,6 +104,46 @@ archives:
     format: zip
     wrap_in_directory: true
 
+dockers:
+  - image_templates:
+      - "asabya/picobrain:v{{ .Version }}-amd64"
+    use: buildx
+    ids:
+      - linux-amd64
+    goarch: amd64
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+  - image_templates:
+      - "asabya/picobrain:v{{ .Version }}-arm64"
+    use: buildx
+    ids:
+      - linux-arm64
+    goarch: arm64
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+
+docker_manifests:
+  - name_template: "asabya/picobrain:v{{ .Major }}.{{ .Minor }}.{{ .Patch }}{{ with .Prerelease }}-{{ . }}{{ end }}"
+    image_templates:
+      - asabya/picobrain:v{{ .Version }}-amd64
+      - asabya/picobrain:v{{ .Version }}-arm64
+  - name_template: "asabya/picobrain:latest"
+    image_templates:
+      - asabya/picobrain:v{{ .Version }}-amd64
+      - asabya/picobrain:v{{ .Version }}-arm64
+
 checksum:
   name_template: 'checksums.txt'
 
