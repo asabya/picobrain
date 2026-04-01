@@ -5,8 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libc6-dev \
     libsqlite3-dev \
-    build-essential \
-    cmake
+    build-essential
 
 WORKDIR /app
 
@@ -17,28 +16,21 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 go build -o picobrain-mcp ./cmd/picobrain-mcp
 
-# Build a recent llama-server that supports nomic-bert GGUF embeddings.
-FROM --platform=linux/amd64 debian:bookworm AS llama-builder
-
-ARG LLAMA_CPP_REF=master
+# Download pre-built llama-server and libraries
+ARG LLAMA_CPP_VERSION=8606
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    cmake \
     curl \
-    git \
-    libcurl4-openssl-dev \
+    tar \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /src
-RUN git clone --depth 1 --branch "${LLAMA_CPP_REF}" https://github.com/ggml-org/llama.cpp .
-RUN cmake -S . -B build \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DLLAMA_BUILD_SERVER=ON \
-    -DLLAMA_BUILD_TESTS=OFF \
-    -DLLAMA_BUILD_EXAMPLES=OFF
-RUN cmake --build build --config Release --target llama-server -j$(nproc)
+RUN curl -fSL -o /tmp/llama.tar.gz \
+      "https://github.com/ggml-org/llama.cpp/releases/download/b${LLAMA_CPP_VERSION}/llama-b${LLAMA_CPP_VERSION}-bin-ubuntu-x64.tar.gz" && \
+    mkdir -p /tmp/llama && \
+    tar xzf /tmp/llama.tar.gz --strip-components=1 -C /tmp/llama/ && \
+    cp /tmp/llama/llama-server /usr/local/bin/ && \
+    cp /tmp/llama/*.so* /usr/local/lib/ && \
+    rm -rf /tmp/llama /tmp/llama.tar.gz
 
 # Runtime stage
 FROM --platform=linux/amd64 debian:bookworm-slim
@@ -55,7 +47,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /data/models
 
 COPY --from=builder /app/picobrain-mcp /usr/local/bin/
-COPY --from=llama-builder /src/build/bin/llama-server /usr/local/bin/
+COPY --from=builder /usr/local/bin/llama-server /usr/local/bin/
+COPY --from=builder /usr/local/lib/lib*.so* /usr/local/lib/
+
+RUN ldconfig
 
 VOLUME ["/data"]
 
