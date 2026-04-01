@@ -27,6 +27,7 @@ Thumbs.db
 
 # Release
 .release-env
+.docker-creds
 
 # Docs (superpowers internal)
 docs/superpowers/
