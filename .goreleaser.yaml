@@ -1,18 +1,89 @@
+project_name: picobrain
+
+release:
+  prerelease: auto
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=1
+
 builds:
-  - id: picobrain-mcp
+  -id: linux-amd64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
     goos:
       - linux
-      - windows
+    goarch:
+      - amd64
+    env:
+      - CC=x86_64-linux-gnu-gcc
+      - CXX=x86_64-linux-gnu-g++
+    flags:
+      - -v
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  -id: linux-arm64
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
+      - linux
+    goarch:
+      - arm64
+    env:
+      - CC=aarch64-linux-gnu-gcc
+      - CXX=aarch64-linux-gnu-g++
+    flags:
+      - -v
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+  
+  -id: darwin-amd64
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
       - darwin
     goarch:
       - amd64
+    env:
+      - CC=o64-clang
+      - CXX=o64-clang++
+    flags:
+      - -v
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+      
+  -id: darwin-arm64
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
+      - darwin
+    goarch:
       - arm64
     env:
-      - CGO_ENABLED=1
+      - CC=oa64-clang
+      - CXX=oa64-clang++
     flags:
-      - -mod=readonly
+      - -v
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+  -id: windows-amd64
+    main: ./cmd/picobrain-mcp
+    binary: picobrain-mcp
+    goos:
+      - windows
+    goarch:
+      - amd64
+    env:
+      - CC=x86_64-w64-mingw32-gcc
+      - CXX=x86_64-w64-mingw32-g++
+    flags:
+      - -v
+      - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}}
 
