@@ -1,27 +1,52 @@
-name: release
+name: Release
+
+defaults:
+  run:
+    shell: bash
+
 on:
   push:
+    branches-ignore:
+      - '**'
     tags:
-      - v*
+      - 'v*.*.*'
+
 jobs:
-  release:
+  goreleaser:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: 'true'
-      - run: git fetch --prune --unshallow
-      - name: setup dependencies
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: '1.25'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: 'true'
+
+      - name: Fetch all tags
+        run: git fetch --force --tags
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: setup release environment
+        run: |-
+          echo '${{secrets.DOCKERHUB_USERNAME}}:${{secrets.DOCKERHUB_TOKEN}}:docker.io' > .docker-creds
+          echo 'DOCKER_CREDS_FILE=.docker-creds'                                        > .release-env
+          echo 'GITHUB_TOKEN=${{secrets.GITHUB_TOKEN}}'                                >> .release-env
+
       - name: release dry run
         run: make release-dry-run
-      - name: setup release environment
-        run: |
-          echo 'GITHUB_TOKEN=${{secrets.GITHUB_TOKEN}}' > .release-env
+
       - name: release publish
-        run: make release
+        run: |-
+          sudo rm -rf dist
+          make release
