@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="logo.png" alt="Picobrain Logo" width="300">
+  <img src="logo.jpeg" alt="Picobrain Logo" width="300">
   <h1>Picobrain</h1>
   <p><strong>Local semantic memory for AI agents.</strong></p>
   <p>Store observations, decisions, and context in SQLite with local embeddings (<code>nomic-embed-text-v1.5</code>). Exposes memory operations via MCP HTTP.</p>

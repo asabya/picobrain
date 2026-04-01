@@ -1,5 +1,6 @@
 # Binaries
 /picobrain-mcp
+/picobrain
 *.exe
 *.dll
 *.so
