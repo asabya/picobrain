@@ -25,11 +25,12 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     tar xzf /tmp/llama.tar.gz --strip-components=1 -C /tmp/llama/
 
 # Runtime stage
-FROM --platform=$TARGETPLATFORM debian:bookworm-slim
+FROM --platform=$TARGETPLATFORM ubuntu:24.04
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libcurl4 \
+    libcurl4t64 \
     libgcc-s1 \
     libstdc++6 \
     libsqlite3-0 \

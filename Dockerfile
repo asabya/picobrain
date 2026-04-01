@@ -32,11 +32,12 @@ RUN curl -fSL -o /tmp/llama.tar.gz \
     rm /tmp/llama.tar.gz
 
 # Runtime stage
-FROM --platform=linux/amd64 debian:bookworm-slim
+FROM --platform=linux/amd64 ubuntu:24.04
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libcurl4 \
+    libcurl4t64 \
     libgcc-s1 \
     libstdc++6 \
     libsqlite3-0 \
