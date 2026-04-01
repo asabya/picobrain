@@ -47,7 +47,9 @@ COPY picobrain-mcp /usr/local/bin/picobrain-mcp
 COPY --from=llama-download /usr/local/bin/llama-server /usr/local/bin/llama-server
 COPY --from=llama-download /usr/local/lib/lib*.so* /usr/local/lib/
 
-RUN ldconfig
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/llama.conf && ldconfig
+
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
 VOLUME ["/data"]
 

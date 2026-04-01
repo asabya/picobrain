@@ -101,7 +101,7 @@ archives:
       - darwin-arm64
       - windows-amd64
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: zip
+    format: binary
     wrap_in_directory: true
 
 dockers:
