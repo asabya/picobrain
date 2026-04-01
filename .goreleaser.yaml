@@ -2,12 +2,17 @@ project_name: picobrain
 
 release:
   prerelease: auto
+  github:
+    owner: asabya
+    name: picobrain
+  draft: false
 env:
   - GO111MODULE=on
   - CGO_ENABLED=1
+  - CGO_CFLAGS=-I/go/src/github.com/asabya/picobrain/cdeps/sqlite3
 
 builds:
-  -id: linux-amd64
+  - id: linux-amd64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
     goos:
@@ -23,7 +28,7 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 
-  -id: linux-arm64
+  - id: linux-arm64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
     goos:
@@ -39,7 +44,7 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
   
-  -id: darwin-amd64
+  - id: darwin-amd64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
     goos:
@@ -55,7 +60,7 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
       
-  -id: darwin-arm64
+  - id: darwin-arm64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
     goos:
@@ -71,7 +76,7 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
 
-  -id: windows-amd64
+  - id: windows-amd64
     main: ./cmd/picobrain-mcp
     binary: picobrain-mcp
     goos:
@@ -90,7 +95,11 @@ builds:
 archives:
   - id: picobrain
     builds:
-      - picobrain-mcp
+      - linux-amd64
+      - linux-arm64
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format: zip
     wrap_in_directory: true
@@ -104,10 +113,3 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
-
-release:
-  github:
-    owner: asabya
-    name: picobrain
-  prerelease: auto
-  draft: false
