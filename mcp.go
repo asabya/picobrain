@@ -15,13 +15,13 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// store_thought
 	s.AddTool(
 		mcp.NewTool("store_thought",
-			mcp.WithDescription("Store a thought in your brain with optional metadata. The client is responsible for classifying and extracting metadata before calling this tool."),
-			mcp.WithString("content", mcp.Required(), mcp.Description("The thought content to store")),
-			mcp.WithArray("people", mcp.Description("People mentioned in the thought")),
-			mcp.WithArray("topics", mcp.Description("Topics or themes of the thought")),
-			mcp.WithString("type", mcp.Description("Type of thought: decision, insight, meeting, person_note, idea, task")),
-			mcp.WithArray("action_items", mcp.Description("Action items extracted from the thought")),
-			mcp.WithString("source", mcp.Description("Where the thought was captured: slack, claude, cli, cursor, etc.")),
+			mcp.WithDescription("CRITICAL: Store observations, facts, and decisions to your memory. Call this OFTEN - after every significant action, discovery, or decision. Do NOT wait until the end of a conversation. The client is responsible for classifying and extracting metadata before calling this tool."),
+			mcp.WithString("content", mcp.Required(), mcp.Description("The thought content to store. Be SPECIFIC: include file names, function names, exact values, error messages. Dense, factual observations only.")),
+			mcp.WithArray("people", mcp.Description("People mentioned in the thought (e.g., ['Alice', 'Bob'])")),
+			mcp.WithArray("topics", mcp.Description("Topics or themes (e.g., ['auth', 'refactor', 'bugfix'])")),
+			mcp.WithString("type", mcp.Description("Type of thought: decision (you made a choice), insight (you learned something), meeting (conversation summary), person_note (info about someone), idea (potential approach), task (work to do), observation (what you noticed)")),
+			mcp.WithArray("action_items", mcp.Description("Action items extracted from the thought (e.g., ['Fix timeout issue', 'Update documentation'])")),
+			mcp.WithString("source", mcp.Description("Where this was captured: claude, cursor, cli, slack, etc.")),
 		),
 		storeThoughtHandler(brain),
 	)
@@ -29,10 +29,10 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// semantic_search
 	s.AddTool(
 		mcp.NewTool("semantic_search",
-			mcp.WithDescription("Search your brain for thoughts by meaning. Uses vector similarity to find relevant thoughts even if they don't contain the exact words."),
-			mcp.WithString("query", mcp.Required(), mcp.Description("The search query — describe what you're looking for")),
+			mcp.WithDescription("Search your memory for relevant thoughts, observations, and facts. Use this BEFORE asking the user to repeat information they may have already told you. Searches by semantic meaning, not just keywords."),
+			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 10)")),
-			mcp.WithString("type", mcp.Description("Filter by thought type (e.g., 'observation'). Leave empty to search all types.")),
+			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty to search all types.")),
 		),
 		semanticSearchHandler(brain),
 	)
@@ -40,10 +40,10 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// list_recent
 	s.AddTool(
 		mcp.NewTool("list_recent",
-			mcp.WithDescription("List recently captured thoughts, ordered by newest first."),
-			mcp.WithString("since", mcp.Description("ISO8601 datetime to list thoughts from (default: 7 days ago)")),
+			mcp.WithDescription("List your recent observations and thoughts. Use this to review what you've learned and done recently, or to find something you stored earlier today."),
+			mcp.WithString("since", mcp.Description("ISO8601 datetime to list thoughts from (default: 7 days ago). Example: 2024-01-15T10:30:00Z")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 20)")),
-			mcp.WithString("type", mcp.Description("Filter by thought type (e.g., 'observation'). Leave empty for all types.")),
+			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty for all types.")),
 		),
 		listRecentHandler(brain),
 	)
@@ -51,7 +51,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// stats
 	s.AddTool(
 		mcp.NewTool("stats",
-			mcp.WithDescription("Get statistics about your brain: total thoughts, top topics, top sources, date range, and average thoughts per day."),
+			mcp.WithDescription("Get statistics about your memory: total thoughts stored, recent activity, top topics, and sources. Use this to check if you're storing enough observations."),
 		),
 		statsHandler(brain),
 	)
@@ -59,8 +59,8 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// bulk_import
 	s.AddTool(
 		mcp.NewTool("bulk_import",
-			mcp.WithDescription("Import multiple thoughts from JSONL format. Each line should be a JSON object with: content (required), people, topics, type, action_items, source. Embeddings are generated automatically."),
-			mcp.WithString("jsonl", mcp.Required(), mcp.Description("JSONL content — one thought per line as JSON")),
+			mcp.WithDescription("Import multiple thoughts from JSONL format. Useful for migrating data from other systems or batch-loading historical notes. Each line is a JSON object. Embeddings are generated automatically."),
+			mcp.WithString("jsonl", mcp.Required(), mcp.Description("JSONL content — one thought per line as JSON. Required fields: content. Optional: people, topics, type, action_items, source. Example: {'content': 'Fact here', 'type': 'observation', 'topics': ['project']}")),
 		),
 		bulkImportHandler(brain),
 	)
@@ -68,7 +68,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// delete_thought
 	s.AddTool(
 		mcp.NewTool("delete_thought",
-			mcp.WithDescription("Delete a thought from your brain by ID. Used by the reflector to remove old observations after consolidation."),
+			mcp.WithDescription("Delete a thought by ID. Normally used during reflection to remove stale observations. Use with caution - deletions are permanent."),
 			mcp.WithString("id", mcp.Required(), mcp.Description("The ID of the thought to delete")),
 		),
 		deleteThoughtHandler(brain),
@@ -77,11 +77,19 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// reflect
 	s.AddTool(
 		mcp.NewTool("reflect",
-			mcp.WithDescription("Consolidate observations: atomically delete old thoughts and store new consolidated ones. Core operation for observational memory reflection."),
-			mcp.WithArray("delete_ids", mcp.Required(), mcp.Description("IDs of thoughts to delete")),
-			mcp.WithArray("consolidated", mcp.Required(), mcp.Description("New consolidated thoughts to store (each with: content, people, topics, type, action_items, source)")),
+			mcp.WithDescription("Consolidate and compress your observations. Run this periodically (after 20+ observations or at session end) to merge related thoughts and remove stale information. This keeps your memory efficient and relevant."),
+			mcp.WithArray("delete_ids", mcp.Required(), mcp.Description("IDs of thoughts to delete (the old observations you're consolidating)")),
+			mcp.WithArray("consolidated", mcp.Required(), mcp.Description("New consolidated thoughts to store. Each should be a dense combination of related old thoughts. Format: [{content: '...', people: [], topics: [], type: '...', action_items: [], source: '...'}]")),
 		),
 		reflectHandler(brain),
+	)
+
+	// health
+	s.AddTool(
+		mcp.NewTool("health",
+			mcp.WithDescription("Check if picobrain is running and healthy. Use this to verify connectivity before starting work."),
+		),
+		healthHandler(brain),
 	)
 }
 
@@ -106,9 +114,10 @@ func storeThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 		}
 
 		result, _ := json.Marshal(map[string]string{
-			"id":      t.ID,
-			"status":  "stored",
-			"message": fmt.Sprintf("Thought stored with ID %s", t.ID),
+			"id":       t.ID,
+			"status":   "stored",
+			"message":  fmt.Sprintf("Thought stored with ID %s", t.ID),
+			"reminder": "Continue storing observations after every significant action!",
 		})
 		return mcp.NewToolResultText(string(result)), nil
 	}
@@ -263,6 +272,22 @@ func reflectHandler(brain *Brain) server.ToolHandlerFunc {
 
 		out, _ := json.MarshalIndent(result, "", "  ")
 		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func healthHandler(brain *Brain) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		stats, err := brain.Stats(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("health check failed: %v", err)), nil
+		}
+
+		result, _ := json.Marshal(map[string]any{
+			"status":         "healthy",
+			"total_thoughts": stats.TotalThoughts,
+			"message":        "Picobrain is running and ready to store your observations",
+		})
+		return mcp.NewToolResultText(string(result)), nil
 	}
 }
 
