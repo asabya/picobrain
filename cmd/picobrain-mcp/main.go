@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/asabya/picobrain"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -62,9 +63,37 @@ func main() {
 		},
 	)
 
+	printStartupBanner(*port)
+
 	httpServer := server.NewStreamableHTTPServer(s)
 	if err := httpServer.Start(":" + *port); err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func printStartupBanner(port string) {
+	fmt.Println()
+	fmt.Println("╔══════════════════════════════════════════════════════════╗")
+	fmt.Println("║                  🧠 PICOBRAIN v0.1.0                    ║")
+	fmt.Println("║         Local semantic memory for AI agents              ║")
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
+	fmt.Printf("║  Status:     ✅ Running                                  ║\n")
+	fmt.Printf("║  Endpoint:   http://localhost:%s/mcp                      ║\n", port)
+	fmt.Printf("║  Time:       %s                           ║\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
+	fmt.Println("║  Tools available:                                        ║")
+	fmt.Println("║    • store_thought   - Save observations & facts         ║")
+	fmt.Println("║    • semantic_search - Find memories by meaning          ║")
+	fmt.Println("║    • list_recent     - Review recent thoughts            ║")
+	fmt.Println("║    • stats           - Check memory statistics           ║")
+	fmt.Println("║    • health          - Verify server health              ║")
+	fmt.Println("║    • reflect         - Consolidate old observations      ║")
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
+	fmt.Println("║  Tips:                                                   ║")
+	fmt.Println("║    → Store observations often (after every action)       ║")
+	fmt.Println("║    → Search before asking users to repeat context        ║")
+	fmt.Println("║    → Reflect periodically to keep memory efficient       ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════╝")
+	fmt.Println()
 }
