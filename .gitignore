@@ -25,6 +25,9 @@ data/
 .DS_Store
 Thumbs.db
 
+# Release
+.release-env
+
 # Docs (superpowers internal)
 docs/superpowers/
 .worktrees/
