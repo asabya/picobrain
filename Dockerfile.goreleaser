@@ -19,7 +19,8 @@ RUN cmake -S . -B build \
     -DBUILD_SHARED_LIBS=OFF \
     -DLLAMA_BUILD_SERVER=ON \
     -DLLAMA_BUILD_TESTS=OFF \
-    -DLLAMA_BUILD_EXAMPLES=OFF
+    -DLLAMA_BUILD_EXAMPLES=OFF \
+    -DGGML_NATIVE=OFF
 RUN cmake --build build --config Release --target llama-server -j$(nproc)
 
 # Runtime stage
