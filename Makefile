@@ -1,5 +1,5 @@
 PACKAGE_NAME          := github.com/asabya/picobrain
-GOLANG_CROSS_VERSION  ?= v1.21.5
+GOLANG_CROSS_VERSION  ?= v1.25.5
 
 SYSROOT_DIR     ?= sysroots
 SYSROOT_ARCHIVE ?= sysroots.tar.bz2
