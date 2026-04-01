@@ -1,27 +1,32 @@
-# Build llama-server from source
-FROM --platform=$TARGETPLATFORM debian:bookworm AS llama-builder
+ARG LLAMA_CPP_VERSION=8606
 
-ARG LLAMA_CPP_REF=master
-ARG TARGETPLATFORM
+# Download pre-built llama-server and libraries
+FROM --platform=$TARGETPLATFORM debian:bookworm-slim AS llama-download
+
+ARG LLAMA_CPP_VERSION
+ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     ca-certificates \
-    cmake \
     curl \
-    git \
-    libcurl4-openssl-dev \
+    tar \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /src
-RUN git clone --depth 1 --branch "${LLAMA_CPP_REF}" https://github.com/ggml-org/llama.cpp .
-RUN cmake -S . -B build \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DLLAMA_BUILD_SERVER=ON \
-    -DLLAMA_BUILD_TESTS=OFF \
-    -DLLAMA_BUILD_EXAMPLES=OFF \
-    -DGGML_NATIVE=OFF
-RUN cmake --build build --config Release --target llama-server -j$(nproc)
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+      LLAMA_ARCH="x64"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+      LLAMA_ARCH="arm64"; \
+    else \
+      echo "Unsupported arch: $TARGETARCH" && exit 1; \
+    fi && \
+    curl -fSL -o /tmp/llama.tar.gz \
+      "https://github.com/ggml-org/llama.cpp/releases/download/b${LLAMA_CPP_VERSION}/llama-b${LLAMA_CPP_VERSION}-bin-ubuntu-${LLAMA_ARCH}.tar.gz" && \
+    mkdir -p /tmp/llama && \
+    tar xzf /tmp/llama.tar.gz --strip-components=1 -C /tmp/llama/ && \
+    cp /tmp/llama/llama-server /usr/local/bin/ && \
+    cp /tmp/llama/*.so* /usr/local/lib/ && \
+    ldconfig && \
+    rm -rf /tmp/llama /tmp/llama.tar.gz
 
 # Runtime stage
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
@@ -39,7 +44,10 @@ RUN mkdir -p /data/models
 
 # picobrain-mcp binary is injected by goreleaser
 COPY picobrain-mcp /usr/local/bin/picobrain-mcp
-COPY --from=llama-builder /src/build/bin/llama-server /usr/local/bin/llama-server
+COPY --from=llama-download /usr/local/bin/llama-server /usr/local/bin/llama-server
+COPY --from=llama-download /usr/local/lib/lib*.so* /usr/local/lib/
+
+RUN ldconfig
 
 VOLUME ["/data"]
 
