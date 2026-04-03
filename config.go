@@ -6,21 +6,23 @@ import (
 )
 
 type Config struct {
-	DBPath        string
-	EmbedModel    string
-	ModelCacheDir string
-	AutoDownload  bool
-	CacheSize     int
-	AutoPruneDays int
+	DBPath           string
+	EmbedModel       string
+	ModelCacheDir    string
+	AutoDownload     bool
+	CacheSize        int
+	AutoPruneDays    int
+	DefaultNamespace string
 }
 
 func DefaultConfig() Config {
 	home, _ := os.UserHomeDir()
 	return Config{
-		DBPath:        filepath.Join(home, ".picobrain", "brain.db"),
-		EmbedModel:    "nomic-embed-text-v1.5",
-		ModelCacheDir: filepath.Join(home, ".picobrain", "models"),
-		AutoDownload:  true,
-		AutoPruneDays: 30,
+		DBPath:           filepath.Join(home, ".picobrain", "brain.db"),
+		EmbedModel:       "nomic-embed-text-v1.5",
+		ModelCacheDir:    filepath.Join(home, ".picobrain", "models"),
+		AutoDownload:     true,
+		AutoPruneDays:    30,
+		DefaultNamespace: "default",
 	}
 }

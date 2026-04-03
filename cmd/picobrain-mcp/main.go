@@ -49,14 +49,16 @@ func runServer(args []string) {
 	port := fs.String("port", "8080", "HTTP listen port")
 	autoPruneDays := fs.Int("auto-prune-days", defaults.AutoPruneDays, "automatically prune thoughts older than N days (0 to disable)")
 	prune := fs.Bool("prune", false, "run manual prune and exit")
+	namespace := fs.String("namespace", defaults.DefaultNamespace, "default namespace for thoughts (e.g., 'default', 'project-alpha')")
 	fs.Parse(args)
 
 	cfg := picobrain.Config{
-		DBPath:        *dbPath,
-		EmbedModel:    *embedModel,
-		ModelCacheDir: *modelCache,
-		AutoDownload:  !*noAutoDownload,
-		AutoPruneDays: *autoPruneDays,
+		DBPath:           *dbPath,
+		EmbedModel:       *embedModel,
+		ModelCacheDir:    *modelCache,
+		AutoDownload:     !*noAutoDownload,
+		AutoPruneDays:    *autoPruneDays,
+		DefaultNamespace: *namespace,
 	}
 
 	brain, err := picobrain.New(cfg)

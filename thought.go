@@ -12,6 +12,7 @@ type Thought struct {
 	Priority    string    `json:"priority,omitempty"`
 	ActionItems []string  `json:"action_items,omitempty"`
 	Source      string    `json:"source,omitempty"`
+	Namespace   string    `json:"namespace,omitempty"`
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 	Distance    float64   `json:"distance,omitempty"`
 }
