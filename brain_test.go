@@ -326,6 +326,204 @@ func TestBrainSearchWithTypeFilter(t *testing.T) {
 	}
 }
 
+func TestBrainSearchWithMetadataFilters(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Store test thoughts with various metadata
+	thoughts := []*Thought{
+		{
+			Content:   "Alice is working on the frontend redesign",
+			People:    []string{"Alice"},
+			Topics:    []string{"frontend", "design"},
+			Type:      "person_note",
+			Source:    "slack",
+			CreatedAt: time.Now().Add(-1 * time.Hour),
+		},
+		{
+			Content:   "Bob fixed the database migration bug",
+			People:    []string{"Bob"},
+			Topics:    []string{"backend", "database"},
+			Type:      "decision",
+			Source:    "claude",
+			CreatedAt: time.Now().Add(-2 * time.Hour),
+		},
+		{
+			Content:   "Carol proposed a new testing strategy with Alice",
+			People:    []string{"Carol", "Alice"},
+			Topics:    []string{"testing", "frontend"},
+			Type:      "idea",
+			Source:    "cli",
+			CreatedAt: time.Now().Add(-3 * time.Hour),
+		},
+		{
+			Content:   "Dave shared insights about backend architecture",
+			People:    []string{"Dave"},
+			Topics:    []string{"backend", "architecture"},
+			Type:      "insight",
+			Source:    "meeting",
+			CreatedAt: time.Now().Add(-24 * time.Hour),
+		},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Test 1: Filter by type
+	t.Run("FilterByType", func(t *testing.T) {
+		filters := SearchFilters{Type: "decision"}
+		results, err := brain.SearchWithFilters(ctx, "database", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		if len(results) != 1 {
+			t.Errorf("expected 1 result, got %d", len(results))
+		}
+		if len(results) > 0 && results[0].Type != "decision" {
+			t.Errorf("expected type 'decision', got %s", results[0].Type)
+		}
+	})
+
+	// Test 2: Filter by single topic
+	t.Run("FilterByTopic", func(t *testing.T) {
+		filters := SearchFilters{Topics: []string{"frontend"}}
+		results, err := brain.SearchWithFilters(ctx, "working", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		if len(results) != 2 {
+			t.Errorf("expected 2 results with topic 'frontend', got %d", len(results))
+		}
+		for _, r := range results {
+			hasFrontend := false
+			for _, topic := range r.Topics {
+				if topic == "frontend" {
+					hasFrontend = true
+					break
+				}
+			}
+			if !hasFrontend {
+				t.Errorf("result missing 'frontend' topic: %v", r.Topics)
+			}
+		}
+	})
+
+	// Test 3: Filter by multiple topics
+	t.Run("FilterByMultipleTopics", func(t *testing.T) {
+		filters := SearchFilters{Topics: []string{"frontend", "design"}}
+		results, err := brain.SearchWithFilters(ctx, "working", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		if len(results) != 1 {
+			t.Errorf("expected 1 result with topics ['frontend', 'design'], got %d", len(results))
+		}
+	})
+
+	// Test 4: Filter by person
+	t.Run("FilterByPerson", func(t *testing.T) {
+		filters := SearchFilters{People: []string{"Alice"}}
+		results, err := brain.SearchWithFilters(ctx, "working", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		if len(results) != 2 {
+			t.Errorf("expected 2 results with person 'Alice', got %d", len(results))
+		}
+		for _, r := range results {
+			hasAlice := false
+			for _, person := range r.People {
+				if person == "Alice" {
+					hasAlice = true
+					break
+				}
+			}
+			if !hasAlice {
+				t.Errorf("result missing 'Alice' in people: %v", r.People)
+			}
+		}
+	})
+
+	// Test 5: Filter by multiple people
+	t.Run("FilterByMultiplePeople", func(t *testing.T) {
+		filters := SearchFilters{People: []string{"Carol", "Alice"}}
+		results, err := brain.SearchWithFilters(ctx, "testing", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		if len(results) != 1 {
+			t.Errorf("expected 1 result with people ['Carol', 'Alice'], got %d", len(results))
+		}
+	})
+
+	// Test 6: Filter by date range (After)
+	t.Run("FilterByAfterDate", func(t *testing.T) {
+		filters := SearchFilters{After: time.Now().Add(-4 * time.Hour)}
+		results, err := brain.SearchWithFilters(ctx, "working", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		// Should exclude Dave's 24-hour-old thought
+		if len(results) != 3 {
+			t.Errorf("expected 3 results after 4 hours ago, got %d", len(results))
+		}
+	})
+
+	// Test 7: Filter by date range (Before)
+	t.Run("FilterByBeforeDate", func(t *testing.T) {
+		// Use type filter to narrow down to Dave's thought
+		filters := SearchFilters{
+			Before: time.Now().Add(-2 * time.Hour),
+			Type:   "insight",
+		}
+		results, err := brain.SearchWithFilters(ctx, "shared insights", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		// Should only include Dave's 24-hour-old thought
+		if len(results) != 1 {
+			t.Errorf("expected 1 result with type='insight' before 2 hours ago, got %d", len(results))
+		}
+		if len(results) > 0 && results[0].Type != "insight" {
+			t.Errorf("expected type 'insight', got %s", results[0].Type)
+		}
+	})
+
+	// Test 8: Combined filters
+	t.Run("FilterCombined", func(t *testing.T) {
+		filters := SearchFilters{
+			Type:   "person_note",
+			People: []string{"Alice"},
+			Topics: []string{"frontend"},
+		}
+		results, err := brain.SearchWithFilters(ctx, "redesign", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		if len(results) != 1 {
+			t.Errorf("expected 1 result with combined filters, got %d", len(results))
+		}
+		if len(results) > 0 && results[0].Type != "person_note" {
+			t.Errorf("expected type 'person_note', got %s", results[0].Type)
+		}
+	})
+
+	// Test 9: No filters (backward compatibility)
+	t.Run("NoFilters", func(t *testing.T) {
+		filters := SearchFilters{}
+		results, err := brain.SearchWithFilters(ctx, "working", 10, filters)
+		if err != nil {
+			t.Fatalf("SearchWithFilters: %v", err)
+		}
+		if len(results) != 4 {
+			t.Errorf("expected 4 results without filters, got %d", len(results))
+		}
+	})
+}
+
 func TestBrainListRecentWithTypeFilter(t *testing.T) {
 	brain := testBrain(t)
 	ctx := context.Background()

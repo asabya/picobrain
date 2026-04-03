@@ -25,3 +25,12 @@ type BrainStats struct {
 	LastThought      time.Time `json:"last_thought"`
 	AvgPerDay        float64   `json:"avg_per_day"`
 }
+
+// SearchFilters contains optional filters for semantic search.
+type SearchFilters struct {
+	Type   string    // Filter by thought type
+	Topics []string  // Filter by topics (must have ALL specified topics)
+	People []string  // Filter by people (must have ALL specified people)
+	Before time.Time // Filter thoughts created before this time
+	After  time.Time // Filter thoughts created after this time
+}

@@ -220,6 +220,74 @@ func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType stri
 	return filtered, nil
 }
 
+func searchByVectorWithFilters(db *sql.DB, embedding []float32, limit int, filters SearchFilters) ([]Thought, error) {
+	vec, err := sqlite_vec.SerializeFloat32(embedding)
+	if err != nil {
+		return nil, fmt.Errorf("serialize query vector: %w", err)
+	}
+
+	// Calculate fetch limit - fetch more if we have filters to account for filtered-out results
+	fetchLimit := limit
+	if filters.Type != "" || len(filters.Topics) > 0 || len(filters.People) > 0 || !filters.Before.IsZero() || !filters.After.IsZero() {
+		fetchLimit = limit * 5 // Fetch more to ensure we can apply all filters
+	}
+
+	// Build dynamic query with filters applied in SQL
+	// This applies filters BEFORE vector ranking for efficiency
+	query := `
+		SELECT v.id, v.distance,
+		       t.content, t.people, t.topics, t.type, t.action_items, t.source, t.created_at
+		FROM thought_vectors v
+		JOIN thoughts t ON t.id = v.id
+		WHERE v.embedding MATCH ?
+		AND k = ?
+	`
+	args := []any{vec, fetchLimit}
+
+	// Add filter conditions
+	if filters.Type != "" {
+		query += " AND t.type = ?"
+		args = append(args, filters.Type)
+	}
+
+	if !filters.Before.IsZero() {
+		query += " AND t.created_at <= ?"
+		args = append(args, filters.Before.Format("2006-01-02 15:04:05"))
+	}
+
+	if !filters.After.IsZero() {
+		query += " AND t.created_at >= ?"
+		args = append(args, filters.After.Format("2006-01-02 15:04:05"))
+	}
+
+	// For topics and people, we need to check JSON arrays
+	// We use json_each to expand the array and check if all required items exist
+	for _, topic := range filters.Topics {
+		query += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM json_each(t.topics) WHERE value = ?%d
+		)`, len(args)+1)
+		args = append(args, topic)
+	}
+
+	for _, person := range filters.People {
+		query += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM json_each(t.people) WHERE value = ?%d
+		)`, len(args)+1)
+		args = append(args, person)
+	}
+
+	query += " ORDER BY v.distance LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("vector search with filters: %w", err)
+	}
+	defer rows.Close()
+
+	return scanThoughts(rows, true)
+}
+
 func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]Thought, error) {
 	var rows *sql.Rows
 	var err error
