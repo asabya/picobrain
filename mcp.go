@@ -22,6 +22,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 			mcp.WithString("type", mcp.Description("Type of thought: decision (you made a choice), insight (you learned something), meeting (conversation summary), person_note (info about someone), idea (potential approach), task (work to do), observation (what you noticed)")),
 			mcp.WithArray("action_items", mcp.Description("Action items extracted from the thought (e.g., ['Fix timeout issue', 'Update documentation'])")),
 			mcp.WithString("source", mcp.Description("Where this was captured: claude, cursor, cli, slack, etc.")),
+			mcp.WithString("priority", mcp.Description("Priority level: low, medium, high, critical. Critical thoughts are protected from auto-pruning. Default: medium")),
 		),
 		storeThoughtHandler(brain),
 	)
@@ -104,6 +105,7 @@ func storeThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 			Content:     content,
 			Type:        request.GetString("type", ""),
 			Source:      request.GetString("source", ""),
+			Priority:    request.GetString("priority", ""),
 			People:      stringSliceArg(request, "people"),
 			Topics:      stringSliceArg(request, "topics"),
 			ActionItems: stringSliceArg(request, "action_items"),
@@ -248,9 +250,10 @@ func reflectHandler(brain *Brain) server.ToolHandlerFunc {
 			}
 
 			t := &Thought{
-				Content: content,
-				Type:    getStringFromMap(obj, "type"),
-				Source:  getStringFromMap(obj, "source"),
+				Content:  content,
+				Type:     getStringFromMap(obj, "type"),
+				Source:   getStringFromMap(obj, "source"),
+				Priority: getStringFromMap(obj, "priority"),
 			}
 			if people, ok := obj["people"].([]any); ok {
 				t.People = toStringSlice(people)

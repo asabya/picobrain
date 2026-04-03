@@ -3,6 +3,7 @@ package picobrain
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -340,6 +341,342 @@ func TestBrainListRecentWithTypeFilter(t *testing.T) {
 	}
 	if len(results) != 1 {
 		t.Fatalf("expected 1 observation, got %d", len(results))
+	}
+}
+
+// Priority system tests
+
+func TestBrainStoreWithPriority(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	thought := &Thought{
+		Content:  "Critical system configuration",
+		Priority: "critical",
+		Type:     "decision",
+		Source:   "test",
+	}
+
+	err := brain.Store(ctx, thought)
+	if err != nil {
+		t.Fatalf("Store with priority: %v", err)
+	}
+
+	// Retrieve and verify priority
+	retrieved, err := brain.Get(ctx, thought.ID)
+	if err != nil {
+		t.Fatalf("Get thought: %v", err)
+	}
+
+	if retrieved.Priority != "critical" {
+		t.Errorf("expected priority 'critical', got '%s'", retrieved.Priority)
+	}
+}
+
+func TestBrainStoreWithAllPriorityLevels(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	priorities := []string{"low", "medium", "high", "critical"}
+
+	for _, p := range priorities {
+		thought := &Thought{
+			Content:  fmt.Sprintf("Thought with %s priority", p),
+			Priority: p,
+			Source:   "test",
+		}
+		if err := brain.Store(ctx, thought); err != nil {
+			t.Fatalf("Store with priority %s: %v", p, err)
+		}
+
+		// Verify it was stored correctly
+		retrieved, err := brain.Get(ctx, thought.ID)
+		if err != nil {
+			t.Fatalf("Get thought with priority %s: %v", p, err)
+		}
+		if retrieved.Priority != p {
+			t.Errorf("priority %s: expected '%s', got '%s'", p, p, retrieved.Priority)
+		}
+	}
+}
+
+func TestBrainListRecentSortedByPriority(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Store thoughts in non-priority order
+	thoughts := []*Thought{
+		{Content: "Low priority thought", Priority: "low", Source: "test"},
+		{Content: "Critical priority thought", Priority: "critical", Source: "test"},
+		{Content: "Medium priority thought", Priority: "medium", Source: "test"},
+		{Content: "High priority thought", Priority: "high", Source: "test"},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	since := time.Now().Add(-1 * time.Hour)
+	results, err := brain.ListRecent(ctx, since, 10, "")
+	if err != nil {
+		t.Fatalf("ListRecent: %v", err)
+	}
+
+	if len(results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(results))
+	}
+
+	// Verify results are sorted by priority (critical > high > medium > low)
+	expectedOrder := []string{"critical", "high", "medium", "low"}
+	for i, result := range results {
+		if result.Priority != expectedOrder[i] {
+			t.Errorf("position %d: expected priority '%s', got '%s'", i, expectedOrder[i], result.Priority)
+		}
+	}
+}
+
+func TestBrainListRecentSortedByPriorityAndDate(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Store multiple thoughts with same priority to verify secondary sort by date
+	thoughts := []*Thought{
+		{Content: "Older critical", Priority: "critical", CreatedAt: time.Now().Add(-2 * time.Hour), Source: "test"},
+		{Content: "Newer critical", Priority: "critical", CreatedAt: time.Now().Add(-1 * time.Hour), Source: "test"},
+		{Content: "Older high", Priority: "high", CreatedAt: time.Now().Add(-2 * time.Hour), Source: "test"},
+		{Content: "Newer high", Priority: "high", CreatedAt: time.Now().Add(-1 * time.Hour), Source: "test"},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	since := time.Now().Add(-3 * time.Hour)
+	results, err := brain.ListRecent(ctx, since, 10, "")
+	if err != nil {
+		t.Fatalf("ListRecent: %v", err)
+	}
+
+	if len(results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(results))
+	}
+
+	// First should be critical (priority order), then within critical, newer first
+	if results[0].Priority != "critical" {
+		t.Errorf("first result should be critical priority, got %s", results[0].Priority)
+	}
+	if results[2].Priority != "high" {
+		t.Errorf("third result should be high priority, got %s", results[2].Priority)
+	}
+}
+
+func TestBrainPruneExcludesCritical(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Store old thoughts (simulating old dates by setting CreatedAt)
+	oldTime := time.Now().Add(-60 * 24 * time.Hour) // 60 days ago
+
+	thoughts := []*Thought{
+		{Content: "Old normal thought", Priority: "medium", CreatedAt: oldTime, Source: "test"},
+		{Content: "Old critical thought", Priority: "critical", CreatedAt: oldTime, Source: "test"},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Prune thoughts older than 30 days
+	prunedCount, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	// Should have pruned only 1 (the medium priority one)
+	if prunedCount != 1 {
+		t.Errorf("expected 1 pruned thought, got %d", prunedCount)
+	}
+
+	// Verify the critical thought still exists
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+
+	if stats.TotalThoughts != 1 {
+		t.Errorf("expected 1 thought remaining (critical), got %d", stats.TotalThoughts)
+	}
+
+	// Verify it's the critical one
+	remaining, err := brain.ListRecent(ctx, time.Now().Add(-100*24*time.Hour), 10, "")
+	if err != nil {
+		t.Fatalf("ListRecent: %v", err)
+	}
+
+	if len(remaining) != 1 || remaining[0].Priority != "critical" {
+		t.Errorf("remaining thought should be critical, got %v", remaining)
+	}
+}
+
+func TestBrainPruneWithNoCritical(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	oldTime := time.Now().Add(-60 * 24 * time.Hour)
+
+	// Store only non-critical old thoughts
+	thoughts := []*Thought{
+		{Content: "Old low priority", Priority: "low", CreatedAt: oldTime, Source: "test"},
+		{Content: "Old medium priority", Priority: "medium", CreatedAt: oldTime, Source: "test"},
+		{Content: "Old high priority", Priority: "high", CreatedAt: oldTime, Source: "test"},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Prune thoughts older than 30 days
+	prunedCount, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	// Should have pruned all 3
+	if prunedCount != 3 {
+		t.Errorf("expected 3 pruned thoughts, got %d", prunedCount)
+	}
+
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+
+	if stats.TotalThoughts != 0 {
+		t.Errorf("expected 0 thoughts remaining, got %d", stats.TotalThoughts)
+	}
+}
+
+func TestBrainPruneDoesNotAffectRecent(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	recentTime := time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
+
+	thoughts := []*Thought{
+		{Content: "Recent low", Priority: "low", CreatedAt: recentTime, Source: "test"},
+		{Content: "Recent critical", Priority: "critical", CreatedAt: recentTime, Source: "test"},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Prune thoughts older than 30 days
+	prunedCount, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	// Should not prune any (all are recent)
+	if prunedCount != 0 {
+		t.Errorf("expected 0 pruned thoughts (all recent), got %d", prunedCount)
+	}
+
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+
+	if stats.TotalThoughts != 2 {
+		t.Errorf("expected 2 thoughts remaining, got %d", stats.TotalThoughts)
+	}
+}
+
+func TestBrainPruneWithMixedAges(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	oldTime := time.Now().Add(-60 * 24 * time.Hour)   // 60 days ago
+	recentTime := time.Now().Add(-5 * 24 * time.Hour) // 5 days ago
+
+	thoughts := []*Thought{
+		{Content: "Old medium", Priority: "medium", CreatedAt: oldTime, Source: "test"},
+		{Content: "Old critical", Priority: "critical", CreatedAt: oldTime, Source: "test"},
+		{Content: "Recent medium", Priority: "medium", CreatedAt: recentTime, Source: "test"},
+		{Content: "Recent critical", Priority: "critical", CreatedAt: recentTime, Source: "test"},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Prune thoughts older than 30 days
+	prunedCount, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	// Should prune only the old medium (not old critical, not recent ones)
+	if prunedCount != 1 {
+		t.Errorf("expected 1 pruned thought (old medium), got %d", prunedCount)
+	}
+
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+
+	if stats.TotalThoughts != 3 {
+		t.Errorf("expected 3 thoughts remaining, got %d", stats.TotalThoughts)
+	}
+}
+
+func TestBrainPruneZeroDays(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	oldTime := time.Now().Add(-60 * 24 * time.Hour)
+
+	thoughts := []*Thought{
+		{Content: "Old medium", Priority: "medium", CreatedAt: oldTime, Source: "test"},
+		{Content: "Old critical", Priority: "critical", CreatedAt: oldTime, Source: "test"},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Prune with 0 days (should disable pruning)
+	prunedCount, err := brain.Prune(ctx, 0)
+	if err != nil {
+		t.Fatalf("Prune with 0 days: %v", err)
+	}
+
+	if prunedCount != 0 {
+		t.Errorf("expected 0 pruned thoughts with 0 days threshold, got %d", prunedCount)
+	}
+
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+
+	if stats.TotalThoughts != 2 {
+		t.Errorf("expected 2 thoughts remaining with 0 days threshold, got %d", stats.TotalThoughts)
 	}
 }
 

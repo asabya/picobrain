@@ -281,3 +281,18 @@ func (b *Brain) BulkImport(ctx context.Context, r io.Reader) (int, error) {
 
 	return count, nil
 }
+
+func (b *Brain) Prune(ctx context.Context, days int) (int, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+
+	prunedCount, err := pruneOldThoughts(b.db, days)
+	if err != nil {
+		return 0, err
+	}
+
+	b.cache.Clear()
+
+	return prunedCount, nil
+}

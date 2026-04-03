@@ -11,6 +11,7 @@ type Config struct {
 	ModelCacheDir string
 	AutoDownload  bool
 	CacheSize     int
+	AutoPruneDays int
 }
 
 func DefaultConfig() Config {
