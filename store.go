@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
@@ -18,8 +19,10 @@ func initSchema(db *sql.DB) error {
 			people TEXT,
 			topics TEXT,
 			type TEXT,
+			priority TEXT,
 			action_items TEXT,
 			source TEXT,
+			namespace TEXT DEFAULT 'default',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
@@ -35,6 +38,32 @@ func initSchema(db *sql.DB) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("create thought_vectors table: %w", err)
+	}
+
+	// Run migrations for existing databases
+	if err := migrateSchema(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
+
+	return nil
+}
+
+func migrateSchema(db *sql.DB) error {
+	// Check if namespace column exists
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('thoughts') WHERE name = 'namespace'
+	`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check namespace column: %w", err)
+	}
+
+	// Add namespace column if it doesn't exist
+	if count == 0 {
+		_, err = db.Exec(`ALTER TABLE thoughts ADD COLUMN namespace TEXT DEFAULT 'default'`)
+		if err != nil {
+			return fmt.Errorf("add namespace column: %w", err)
+		}
 	}
 
 	return nil
@@ -54,11 +83,15 @@ func insertThoughtTx(exec dbExecer, t *Thought) error {
 		createdAt = time.Now()
 	}
 
+	if t.Namespace == "" {
+		t.Namespace = "default"
+	}
+
 	_, err := exec.Exec(`
-		INSERT INTO thoughts (id, content, people, topics, type, action_items, source, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO thoughts (id, content, people, topics, type, priority, action_items, source, namespace, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, t.ID, t.Content, string(peopleJSON), string(topicsJSON),
-		t.Type, string(actionItemsJSON), t.Source, createdAt)
+		t.Type, t.Priority, string(actionItemsJSON), t.Source, t.Namespace, createdAt)
 	if err != nil {
 		return fmt.Errorf("insert thought: %w", err)
 	}
@@ -141,14 +174,14 @@ func deleteThought(db *sql.DB, id string) error {
 
 func getThought(db *sql.DB, id string) (*Thought, error) {
 	var t Thought
-	var peopleStr, topicsStr, actionItemsStr sql.NullString
+	var peopleStr, topicsStr, actionItemsStr, priorityStr, namespaceStr sql.NullString
 	var createdAt string
 
 	err := db.QueryRow(`
-		SELECT id, content, people, topics, type, action_items, source, created_at
+		SELECT id, content, people, topics, type, priority, action_items, source, namespace, created_at
 		FROM thoughts WHERE id = ?
 	`, id).Scan(&t.ID, &t.Content, &peopleStr, &topicsStr,
-		&t.Type, &actionItemsStr, &t.Source, &createdAt)
+		&t.Type, &priorityStr, &actionItemsStr, &t.Source, &namespaceStr, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("get thought %s: %w", id, err)
 	}
@@ -159,8 +192,14 @@ func getThought(db *sql.DB, id string) (*Thought, error) {
 	if topicsStr.Valid {
 		json.Unmarshal([]byte(topicsStr.String), &t.Topics)
 	}
+	if priorityStr.Valid {
+		t.Priority = priorityStr.String
+	}
 	if actionItemsStr.Valid {
 		json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
+	}
+	if namespaceStr.Valid {
+		t.Namespace = namespaceStr.String
 	}
 
 	t.CreatedAt = parseTime(createdAt)
@@ -168,27 +207,41 @@ func getThought(db *sql.DB, id string) (*Thought, error) {
 	return &t, nil
 }
 
-func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType string) ([]Thought, error) {
+func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType string, timeRange *TimeRange) ([]Thought, error) {
 	vec, err := sqlite_vec.SerializeFloat32(embedding)
 	if err != nil {
 		return nil, fmt.Errorf("serialize query vector: %w", err)
 	}
 
-	// When filtering by type, fetch more to account for filtered-out results
 	searchLimit := limit
-	if thoughtType != "" {
+	if thoughtType != "" || timeRange != nil {
 		searchLimit = limit * 3
 	}
 
-	rows, err := db.Query(`
-		SELECT v.id, v.distance,
-		       t.content, t.people, t.topics, t.type, t.action_items, t.source, t.created_at
-		FROM thought_vectors v
-		JOIN thoughts t ON t.id = v.id
-		WHERE v.embedding MATCH ?
-		AND k = ?
-		ORDER BY v.distance
-	`, vec, searchLimit)
+	var rows *sql.Rows
+	if timeRange != nil {
+		rows, err = db.Query(`
+			SELECT v.id, v.distance,
+			       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.namespace, t.created_at
+			FROM thought_vectors v
+			JOIN thoughts t ON t.id = v.id
+			WHERE v.embedding MATCH ?
+			AND k = ?
+			AND t.created_at >= ?
+			AND t.created_at < ?
+			ORDER BY v.distance
+		`, vec, searchLimit, timeRange.Start.Format("2006-01-02 15:04:05"), timeRange.End.Format("2006-01-02 15:04:05"))
+	} else {
+		rows, err = db.Query(`
+			SELECT v.id, v.distance,
+			       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.namespace, t.created_at
+			FROM thought_vectors v
+			JOIN thoughts t ON t.id = v.id
+			WHERE v.embedding MATCH ?
+			AND k = ?
+			ORDER BY v.distance
+		`, vec, searchLimit)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("vector search: %w", err)
 	}
@@ -200,6 +253,9 @@ func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType stri
 	}
 
 	if thoughtType == "" {
+		if len(all) > limit {
+			return all[:limit], nil
+		}
 		return all, nil
 	}
 
@@ -216,12 +272,80 @@ func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType stri
 	return filtered, nil
 }
 
+func searchByVectorWithFilters(db *sql.DB, embedding []float32, limit int, filters SearchFilters) ([]Thought, error) {
+	vec, err := sqlite_vec.SerializeFloat32(embedding)
+	if err != nil {
+		return nil, fmt.Errorf("serialize query vector: %w", err)
+	}
+
+	// Calculate fetch limit - fetch more if we have filters to account for filtered-out results
+	fetchLimit := limit
+	if filters.Type != "" || len(filters.Topics) > 0 || len(filters.People) > 0 || !filters.Before.IsZero() || !filters.After.IsZero() {
+		fetchLimit = limit * 5 // Fetch more to ensure we can apply all filters
+	}
+
+	// Build dynamic query with filters applied in SQL
+	// This applies filters BEFORE vector ranking for efficiency
+	query := `
+		SELECT v.id, v.distance,
+		       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.namespace, t.created_at
+		FROM thought_vectors v
+		JOIN thoughts t ON t.id = v.id
+		WHERE v.embedding MATCH ?
+		AND k = ?
+	`
+	args := []any{vec, fetchLimit}
+
+	// Add filter conditions
+	if filters.Type != "" {
+		query += " AND t.type = ?"
+		args = append(args, filters.Type)
+	}
+
+	if !filters.Before.IsZero() {
+		query += " AND t.created_at <= ?"
+		args = append(args, filters.Before.Format("2006-01-02 15:04:05"))
+	}
+
+	if !filters.After.IsZero() {
+		query += " AND t.created_at >= ?"
+		args = append(args, filters.After.Format("2006-01-02 15:04:05"))
+	}
+
+	// For topics and people, we need to check JSON arrays
+	// We use json_each to expand the array and check if all required items exist
+	for _, topic := range filters.Topics {
+		query += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM json_each(t.topics) WHERE value = ?%d
+		)`, len(args)+1)
+		args = append(args, topic)
+	}
+
+	for _, person := range filters.People {
+		query += fmt.Sprintf(` AND EXISTS (
+			SELECT 1 FROM json_each(t.people) WHERE value = ?%d
+		)`, len(args)+1)
+		args = append(args, person)
+	}
+
+	query += " ORDER BY v.distance LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("vector search with filters: %w", err)
+	}
+	defer rows.Close()
+
+	return scanThoughts(rows, true)
+}
+
 func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]Thought, error) {
 	var rows *sql.Rows
 	var err error
 	if thoughtType != "" {
 		rows, err = db.Query(`
-			SELECT id, content, people, topics, type, action_items, source, created_at
+			SELECT id, content, people, topics, type, priority, action_items, source, namespace, created_at
 			FROM thoughts
 			WHERE created_at >= ? AND type = ?
 			ORDER BY created_at DESC
@@ -229,7 +353,7 @@ func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]T
 		`, since.Format("2006-01-02 15:04:05"), thoughtType, limit)
 	} else {
 		rows, err = db.Query(`
-			SELECT id, content, people, topics, type, action_items, source, created_at
+			SELECT id, content, people, topics, type, priority, action_items, source, namespace, created_at
 			FROM thoughts
 			WHERE created_at >= ?
 			ORDER BY created_at DESC
@@ -269,6 +393,7 @@ func getStats(db *sql.DB) (*BrainStats, error) {
 	topicRows, err := db.Query(`
 		SELECT value, COUNT(*) as cnt
 		FROM thoughts, json_each(thoughts.topics)
+		WHERE value IS NOT NULL
 		GROUP BY value
 		ORDER BY cnt DESC
 		LIMIT 10
@@ -335,17 +460,17 @@ func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
 	var thoughts []Thought
 	for rows.Next() {
 		var t Thought
-		var peopleStr, topicsStr, actionItemsStr sql.NullString
+		var peopleStr, topicsStr, actionItemsStr, priorityStr, namespaceStr sql.NullString
 		var createdAt string
 
 		var err error
 		if withDistance {
 			err = rows.Scan(&t.ID, &t.Distance,
 				&t.Content, &peopleStr, &topicsStr,
-				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+				&t.Type, &priorityStr, &actionItemsStr, &t.Source, &namespaceStr, &createdAt)
 		} else {
 			err = rows.Scan(&t.ID, &t.Content, &peopleStr, &topicsStr,
-				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+				&t.Type, &priorityStr, &actionItemsStr, &t.Source, &namespaceStr, &createdAt)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("scan thought: %w", err)
@@ -357,14 +482,72 @@ func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
 		if topicsStr.Valid {
 			json.Unmarshal([]byte(topicsStr.String), &t.Topics)
 		}
+		if priorityStr.Valid {
+			t.Priority = priorityStr.String
+		}
 		if actionItemsStr.Valid {
 			json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
+		}
+		if namespaceStr.Valid {
+			t.Namespace = namespaceStr.String
 		}
 		t.CreatedAt = parseTime(createdAt)
 
 		thoughts = append(thoughts, t)
 	}
 	return thoughts, rows.Err()
+}
+
+func queryThoughtsWithFilter(db *sql.DB, filter ExportFilter) ([]Thought, error) {
+	query := `
+		SELECT id, content, people, topics, type, priority, action_items, source, namespace, created_at
+		FROM thoughts
+		WHERE 1=1
+	`
+	args := []any{}
+
+	if filter.Since != nil {
+		query += " AND created_at >= ?"
+		args = append(args, filter.Since.Format("2006-01-02 15:04:05"))
+	}
+	if filter.Until != nil {
+		query += " AND created_at <= ?"
+		args = append(args, filter.Until.Format("2006-01-02 15:04:05"))
+	}
+	if filter.Type != "" {
+		query += " AND type = ?"
+		args = append(args, filter.Type)
+	}
+	if filter.Source != "" {
+		query += " AND source = ?"
+		args = append(args, filter.Source)
+	}
+	if len(filter.Topics) > 0 {
+		placeholders := make([]string, len(filter.Topics))
+		for i := range filter.Topics {
+			placeholders[i] = "?"
+			args = append(args, filter.Topics[i])
+		}
+		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM json_each(topics) WHERE value IN (%s))", strings.Join(placeholders, ","))
+	}
+	if len(filter.People) > 0 {
+		placeholders := make([]string, len(filter.People))
+		for i := range filter.People {
+			placeholders[i] = "?"
+			args = append(args, filter.People[i])
+		}
+		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM json_each(people) WHERE value IN (%s))", strings.Join(placeholders, ","))
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query thoughts: %w", err)
+	}
+	defer rows.Close()
+
+	return scanThoughts(rows, false)
 }
 
 func parseTime(s string) time.Time {
@@ -379,4 +562,53 @@ func parseTime(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// pruneOldThoughts deletes thoughts older than the given number of days,
+// excluding critical priority thoughts. Returns the number of thoughts deleted.
+func pruneOldThoughts(db *sql.DB, days int) (int, error) {
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	cutoffStr := cutoff.Format("2006-01-02 15:04:05")
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+		SELECT id FROM thoughts
+		WHERE created_at < ?
+		AND (priority IS NULL OR priority != 'critical')
+	`, cutoffStr)
+	if err != nil {
+		return 0, fmt.Errorf("query thoughts to prune: %w", err)
+	}
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan thought id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("rows error: %w", err)
+	}
+
+	for _, id := range ids {
+		if err := deleteThoughtTx(tx, id); err != nil {
+			return 0, fmt.Errorf("delete thought %s: %w", id, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return len(ids), nil
 }

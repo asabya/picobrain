@@ -110,6 +110,10 @@ func (b *Brain) Store(ctx context.Context, t *Thought) error {
 		t.CreatedAt = time.Now()
 	}
 
+	if t.Namespace == "" {
+		t.Namespace = b.config.DefaultNamespace
+	}
+
 	if t.Embedding == nil {
 		emb, err := b.embedder.Embed(ctx, t.Content)
 		if err != nil {
@@ -126,7 +130,7 @@ func (b *Brain) Store(ctx context.Context, t *Thought) error {
 	return nil
 }
 
-func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType string) ([]Thought, error) {
+func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType string, timeRange *TimeRange) ([]Thought, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -136,7 +140,20 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	return searchByVector(b.db, queryEmb, limit, thoughtType)
+	return searchByVector(b.db, queryEmb, limit, thoughtType, timeRange)
+}
+
+func (b *Brain) SearchWithFilters(ctx context.Context, query string, limit int, filters SearchFilters) ([]Thought, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	queryEmb, err := b.embedder.Embed(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+
+	return searchByVectorWithFilters(b.db, queryEmb, limit, filters)
 }
 
 func (b *Brain) ListRecent(ctx context.Context, since time.Time, limit int, thoughtType string) ([]Thought, error) {
@@ -280,4 +297,23 @@ func (b *Brain) BulkImport(ctx context.Context, r io.Reader) (int, error) {
 	}
 
 	return count, nil
+}
+
+// Prune deletes thoughts older than the specified number of days,
+// excluding critical priority thoughts. Returns the number of thoughts deleted.
+func (b *Brain) Prune(ctx context.Context, days int) (int, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+
+	deleted, err := pruneOldThoughts(b.db, days)
+	if err != nil {
+		return 0, fmt.Errorf("prune thoughts: %w", err)
+	}
+
+	if deleted > 0 {
+		b.cache.Clear()
+	}
+
+	return deleted, nil
 }

@@ -22,6 +22,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 			mcp.WithString("type", mcp.Description("Type of thought: decision (you made a choice), insight (you learned something), meeting (conversation summary), person_note (info about someone), idea (potential approach), task (work to do), observation (what you noticed)")),
 			mcp.WithArray("action_items", mcp.Description("Action items extracted from the thought (e.g., ['Fix timeout issue', 'Update documentation'])")),
 			mcp.WithString("source", mcp.Description("Where this was captured: claude, cursor, cli, slack, etc.")),
+			mcp.WithString("namespace", mcp.Description("Namespace for multi-tenant memory spaces (e.g., 'project-alpha', 'team-beta'). Defaults to 'default'.")),
 		),
 		storeThoughtHandler(brain),
 	)
@@ -29,10 +30,16 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// semantic_search
 	s.AddTool(
 		mcp.NewTool("semantic_search",
-			mcp.WithDescription("Search your memory for relevant thoughts, observations, and facts. Use this BEFORE asking the user to repeat information they may have already told you. Searches by semantic meaning, not just keywords."),
-			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'")),
+			mcp.WithDescription("Search your memory for relevant thoughts, observations, and facts. Use this BEFORE asking the user to repeat information they may have already told you. Searches by semantic meaning, not just keywords. Supports natural time filters like 'today', 'yesterday', 'last week', '3 days ago' in the query, or use explicit time_filter parameter."),
+			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'. You can include time expressions like 'today', 'yesterday', 'last week' which will be automatically extracted.")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 10)")),
 			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty to search all types.")),
+			mcp.WithArray("topics", mcp.Description("Filter by topics - only return thoughts that have ALL specified topics. Example: ['auth', 'security'] returns thoughts tagged with both auth AND security.")),
+			mcp.WithArray("people", mcp.Description("Filter by people mentioned - only return thoughts that mention ALL specified people. Example: ['Alice', 'Bob'] returns thoughts mentioning both Alice AND Bob.")),
+			mcp.WithString("before", mcp.Description("Filter thoughts created before this ISO8601 datetime. Example: 2024-01-15T10:30:00Z")),
+			mcp.WithString("after", mcp.Description("Filter thoughts created after this ISO8601 datetime. Example: 2024-01-01T00:00:00Z")),
+			mcp.WithString("time_filter", mcp.Description("Optional time filter for temporal queries. Supports: today, yesterday, this week, last week, this month, last month, N days/weeks/months ago, YYYY-MM-DD. Can also embed time expressions in the query itself (e.g., 'decisions from last week').")),
+			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty to search across all namespaces.")),
 		),
 		semanticSearchHandler(brain),
 	)
@@ -44,6 +51,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 			mcp.WithString("since", mcp.Description("ISO8601 datetime to list thoughts from (default: 7 days ago). Example: 2024-01-15T10:30:00Z")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 20)")),
 			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty for all types.")),
+			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty to list across all namespaces.")),
 		),
 		listRecentHandler(brain),
 	)
@@ -52,6 +60,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	s.AddTool(
 		mcp.NewTool("stats",
 			mcp.WithDescription("Get statistics about your memory: total thoughts stored, recent activity, top topics, and sources. Use this to check if you're storing enough observations."),
+			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty for stats across all namespaces.")),
 		),
 		statsHandler(brain),
 	)
@@ -104,6 +113,7 @@ func storeThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 			Content:     content,
 			Type:        request.GetString("type", ""),
 			Source:      request.GetString("source", ""),
+			Namespace:   request.GetString("namespace", ""),
 			People:      stringSliceArg(request, "people"),
 			Topics:      stringSliceArg(request, "topics"),
 			ActionItems: stringSliceArg(request, "action_items"),
@@ -114,10 +124,11 @@ func storeThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 		}
 
 		result, _ := json.Marshal(map[string]string{
-			"id":       t.ID,
-			"status":   "stored",
-			"message":  fmt.Sprintf("Thought stored with ID %s", t.ID),
-			"reminder": "Continue storing observations after every significant action!",
+			"id":        t.ID,
+			"status":    "stored",
+			"namespace": t.Namespace,
+			"message":   fmt.Sprintf("Thought stored with ID %s in namespace '%s'", t.ID, t.Namespace),
+			"reminder":  "Continue storing observations after every significant action!",
 		})
 		return mcp.NewToolResultText(string(result)), nil
 	}
@@ -132,8 +143,64 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 
 		limit := request.GetInt("limit", 10)
 		thoughtType := request.GetString("type", "")
+		timeFilter := request.GetString("time_filter", "")
 
-		results, err := brain.Search(ctx, query, limit, thoughtType)
+		// Build filters from request parameters
+		filters := SearchFilters{
+			Type:   thoughtType,
+			Topics: stringSliceArg(request, "topics"),
+			People: stringSliceArg(request, "people"),
+		}
+
+		// Parse date filters if provided
+		if beforeStr := request.GetString("before", ""); beforeStr != "" {
+			if before, err := time.Parse(time.RFC3339, beforeStr); err == nil {
+				filters.Before = before
+			}
+		}
+		if afterStr := request.GetString("after", ""); afterStr != "" {
+			if after, err := time.Parse(time.RFC3339, afterStr); err == nil {
+				filters.After = after
+			}
+		}
+
+		// Handle time_filter parameter or extract from query
+		var timeRange *TimeRange
+		cleanQuery := query
+
+		if timeFilter != "" {
+			tr, err := ParseTimeExpression(timeFilter, time.Now())
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid time filter: %v", err)), nil
+			}
+			timeRange = &tr
+			// Override before/after if time_filter is provided
+			filters.Before = timeRange.End
+			filters.After = timeRange.Start
+		} else {
+			result := ExtractTimeFilterFromQuery(query, time.Now())
+			if result.HasFilter {
+				timeRange = &TimeRange{Start: result.Start, End: result.End}
+				cleanQuery = result.CleanQuery
+				// Override before/after if extracted from query
+				filters.Before = timeRange.End
+				filters.After = timeRange.Start
+			}
+		}
+
+		// Check if we need to use the new filtered search or legacy search
+		// Legacy search is used when only type is specified (for backward compatibility)
+		var results []Thought
+		if filters.Type != "" && len(filters.Topics) == 0 && len(filters.People) == 0 && filters.Before.IsZero() && filters.After.IsZero() {
+			// Use legacy search for backward compatibility
+			results, err = brain.Search(ctx, cleanQuery, limit, filters.Type, nil)
+		} else if len(filters.Topics) > 0 || len(filters.People) > 0 || !filters.Before.IsZero() || !filters.After.IsZero() || filters.Type != "" {
+			// Use new filtered search when any filter is specified
+			results, err = brain.SearchWithFilters(ctx, cleanQuery, limit, filters)
+		} else {
+			// No filters at all - use legacy search
+			results, err = brain.Search(ctx, cleanQuery, limit, "", nil)
+		}
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 		}

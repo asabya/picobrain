@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/asabya/picobrain"
@@ -13,20 +14,51 @@ import (
 )
 
 func main() {
+	if len(os.Args) < 2 {
+		runServer(os.Args[1:])
+		return
+	}
+
+	switch os.Args[1] {
+	case "export":
+		runExport(os.Args[2:])
+	case "import":
+		runImport(os.Args[2:])
+	case "serve", "server":
+		runServer(os.Args[2:])
+	default:
+		if strings.HasPrefix(os.Args[1], "-") {
+			runServer(os.Args[1:])
+		} else {
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
+			fmt.Fprintf(os.Stderr, "Usage: picobrain [command] [options]\n")
+			fmt.Fprintf(os.Stderr, "Commands: serve, export, import\n")
+			os.Exit(1)
+		}
+	}
+}
+
+func runServer(args []string) {
 	defaults := picobrain.DefaultConfig()
 
-	dbPath := flag.String("db", defaults.DBPath, "path to brain database")
-	embedModel := flag.String("embed-model", defaults.EmbedModel, "embedding model name (e.g. nomic-embed-text-v1.5)")
-	modelCache := flag.String("model-cache", defaults.ModelCacheDir, "directory to cache downloaded models")
-	noAutoDownload := flag.Bool("no-auto-download", false, "disable automatic model download (fail if model not cached)")
-	port := flag.String("port", "8080", "HTTP listen port")
-	flag.Parse()
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	dbPath := fs.String("db", defaults.DBPath, "path to brain database")
+	embedModel := fs.String("embed-model", defaults.EmbedModel, "embedding model name (e.g. nomic-embed-text-v1.5)")
+	modelCache := fs.String("model-cache", defaults.ModelCacheDir, "directory to cache downloaded models")
+	noAutoDownload := fs.Bool("no-auto-download", false, "disable automatic model download (fail if model not cached)")
+	port := fs.String("port", "8080", "HTTP listen port")
+	autoPruneDays := fs.Int("auto-prune-days", defaults.AutoPruneDays, "automatically prune thoughts older than N days (0 to disable)")
+	prune := fs.Bool("prune", false, "run manual prune and exit")
+	namespace := fs.String("namespace", defaults.DefaultNamespace, "default namespace for thoughts (e.g., 'default', 'project-alpha')")
+	fs.Parse(args)
 
 	cfg := picobrain.Config{
-		DBPath:        *dbPath,
-		EmbedModel:    *embedModel,
-		ModelCacheDir: *modelCache,
-		AutoDownload:  !*noAutoDownload,
+		DBPath:           *dbPath,
+		EmbedModel:       *embedModel,
+		ModelCacheDir:    *modelCache,
+		AutoDownload:     !*noAutoDownload,
+		AutoPruneDays:    *autoPruneDays,
+		DefaultNamespace: *namespace,
 	}
 
 	brain, err := picobrain.New(cfg)
@@ -35,6 +67,27 @@ func main() {
 		os.Exit(1)
 	}
 	defer brain.Close()
+
+	if *prune {
+		ctx := context.Background()
+		deleted, err := brain.Prune(ctx, cfg.AutoPruneDays)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "prune failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Pruned %d thought(s) older than %d days\n", deleted, cfg.AutoPruneDays)
+		os.Exit(0)
+	}
+
+	if cfg.AutoPruneDays > 0 {
+		ctx := context.Background()
+		deleted, err := brain.Prune(ctx, cfg.AutoPruneDays)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "auto-prune failed: %v\n", err)
+		} else if deleted > 0 {
+			fmt.Printf("Auto-pruned %d thought(s) older than %d days\n", deleted, cfg.AutoPruneDays)
+		}
+	}
 
 	s := server.NewMCPServer("picobrain", "0.1.0",
 		server.WithPromptCapabilities(false),
@@ -68,6 +121,30 @@ func main() {
 	httpServer := server.NewStreamableHTTPServer(s)
 	if err := httpServer.Start(":" + *port); err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runExport(args []string) {
+	cmd := newExportCommand()
+	if err := cmd.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runImport(args []string) {
+	cmd := newImportCommand()
+	if err := cmd.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
