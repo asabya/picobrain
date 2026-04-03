@@ -126,7 +126,7 @@ func (b *Brain) Store(ctx context.Context, t *Thought) error {
 	return nil
 }
 
-func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType string) ([]Thought, error) {
+func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType string, timeRange *TimeRange) ([]Thought, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -136,7 +136,7 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	return searchByVector(b.db, queryEmb, limit, thoughtType)
+	return searchByVector(b.db, queryEmb, limit, thoughtType, timeRange)
 }
 
 func (b *Brain) ListRecent(ctx context.Context, since time.Time, limit int, thoughtType string) ([]Thought, error) {

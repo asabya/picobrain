@@ -168,7 +168,7 @@ func TestSearchByVector(t *testing.T) {
 	query := make([]float32, 768)
 	query[0] = 1.0
 
-	results, err := searchByVector(db, query, 2, "")
+	results, err := searchByVector(db, query, 2, "", nil)
 	if err != nil {
 		t.Fatalf("searchByVector: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSearchByVectorEmpty(t *testing.T) {
 	query := make([]float32, 768)
 	query[0] = 1.0
 
-	results, err := searchByVector(db, query, 5, "")
+	results, err := searchByVector(db, query, 5, "", nil)
 	if err != nil {
 		t.Fatalf("searchByVector on empty db: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestSearchByVectorWithTypeFilter(t *testing.T) {
 	query[3] = 1.0
 
 	// Filter for observations only
-	results, err := searchByVector(db, query, 10, "observation")
+	results, err := searchByVector(db, query, 10, "observation", nil)
 	if err != nil {
 		t.Fatalf("searchByVector with type filter: %v", err)
 	}

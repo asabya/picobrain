@@ -112,7 +112,7 @@ func TestBrainStoreWithPrecomputedEmbedding(t *testing.T) {
 	}
 
 	// Verify the thought was stored (search should find it)
-	results, err := brain.Search(ctx, "Pre-embedded thought", 1, "")
+	results, err := brain.Search(ctx, "Pre-embedded thought", 1, "", nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestBrainSearch(t *testing.T) {
 		}
 	}
 
-	results, err := brain.Search(ctx, "Alice frontend", 2, "")
+	results, err := brain.Search(ctx, "Alice frontend", 2, "", nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestBrainDelete(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	results, err := brain.Search(ctx, "deleted", 10, "")
+	results, err := brain.Search(ctx, "deleted", 10, "", nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestBrainSearchWithTypeFilter(t *testing.T) {
 	brain.Store(ctx, &Thought{Content: "regular thought", Type: "idea", Source: "test"})
 	brain.Store(ctx, &Thought{Content: "observation about coding", Type: "observation", Source: "agent"})
 
-	results, err := brain.Search(ctx, "coding", 10, "observation")
+	results, err := brain.Search(ctx, "coding", 10, "observation", nil)
 	if err != nil {
 		t.Fatalf("Search with type: %v", err)
 	}
@@ -373,5 +373,100 @@ func TestOllamaEmbedder(t *testing.T) {
 	}
 	if len(emb) != 768 {
 		t.Errorf("expected 768 dims, got %d", len(emb))
+	}
+}
+
+func TestBrainSearchWithTimeFilter(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	oldThought := &Thought{
+		Content: "Old thought from last week",
+		Type:    "observation",
+		Source:  "test",
+	}
+	oldThought.CreatedAt = time.Now().Add(-7 * 24 * time.Hour)
+	if err := brain.Store(ctx, oldThought); err != nil {
+		t.Fatalf("Store old thought: %v", err)
+	}
+
+	recentThought := &Thought{
+		Content: "Recent thought from today",
+		Type:    "observation",
+		Source:  "test",
+	}
+	if err := brain.Store(ctx, recentThought); err != nil {
+		t.Fatalf("Store recent thought: %v", err)
+	}
+
+	results, err := brain.Search(ctx, "thought", 10, "", nil)
+	if err != nil {
+		t.Fatalf("Search without filter: %v", err)
+	}
+	if len(results) != 2 {
+		t.Errorf("expected 2 results without filter, got %d", len(results))
+	}
+
+	last24h := TimeRange{
+		Start: time.Now().Add(-24 * time.Hour),
+		End:   time.Now().Add(24 * time.Hour),
+	}
+	results, err = brain.Search(ctx, "thought", 10, "", &last24h)
+	if err != nil {
+		t.Fatalf("Search with time filter: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result with time filter, got %d", len(results))
+	}
+	if results[0].Content != "Recent thought from today" {
+		t.Errorf("expected recent thought, got %s", results[0].Content)
+	}
+}
+
+func TestBrainSearchWithTimeFilterAndType(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	oldDecision := &Thought{
+		Content: "Old decision about auth",
+		Type:    "decision",
+		Source:  "test",
+	}
+	oldDecision.CreatedAt = time.Now().Add(-10 * 24 * time.Hour)
+	if err := brain.Store(ctx, oldDecision); err != nil {
+		t.Fatalf("Store old decision: %v", err)
+	}
+
+	recentDecision := &Thought{
+		Content: "Recent decision about database",
+		Type:    "decision",
+		Source:  "test",
+	}
+	if err := brain.Store(ctx, recentDecision); err != nil {
+		t.Fatalf("Store recent decision: %v", err)
+	}
+
+	recentObservation := &Thought{
+		Content: "Recent observation about code",
+		Type:    "observation",
+		Source:  "test",
+	}
+	if err := brain.Store(ctx, recentObservation); err != nil {
+		t.Fatalf("Store recent observation: %v", err)
+	}
+
+	last7Days := TimeRange{
+		Start: time.Now().Add(-7 * 24 * time.Hour),
+		End:   time.Now().Add(24 * time.Hour),
+	}
+	results, err := brain.Search(ctx, "decision", 10, "decision", &last7Days)
+	if err != nil {
+		t.Fatalf("Search with time and type filter: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result with both filters, got %d", len(results))
+	}
+	if results[0].Content != "Recent decision about database" {
+		t.Errorf("expected recent decision, got %s", results[0].Content)
 	}
 }
