@@ -22,6 +22,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 			mcp.WithString("type", mcp.Description("Type of thought: decision (you made a choice), insight (you learned something), meeting (conversation summary), person_note (info about someone), idea (potential approach), task (work to do), observation (what you noticed)")),
 			mcp.WithArray("action_items", mcp.Description("Action items extracted from the thought (e.g., ['Fix timeout issue', 'Update documentation'])")),
 			mcp.WithString("source", mcp.Description("Where this was captured: claude, cursor, cli, slack, etc.")),
+			mcp.WithString("namespace", mcp.Description("Namespace for multi-tenant memory spaces (e.g., 'project-alpha', 'team-beta'). Defaults to 'default'.")),
 		),
 		storeThoughtHandler(brain),
 	)
@@ -33,6 +34,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 10)")),
 			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty to search all types.")),
+			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty to search across all namespaces.")),
 		),
 		semanticSearchHandler(brain),
 	)
@@ -44,6 +46,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 			mcp.WithString("since", mcp.Description("ISO8601 datetime to list thoughts from (default: 7 days ago). Example: 2024-01-15T10:30:00Z")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 20)")),
 			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty for all types.")),
+			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty to list across all namespaces.")),
 		),
 		listRecentHandler(brain),
 	)
@@ -52,6 +55,7 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	s.AddTool(
 		mcp.NewTool("stats",
 			mcp.WithDescription("Get statistics about your memory: total thoughts stored, recent activity, top topics, and sources. Use this to check if you're storing enough observations."),
+			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty for stats across all namespaces.")),
 		),
 		statsHandler(brain),
 	)
@@ -104,6 +108,7 @@ func storeThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 			Content:     content,
 			Type:        request.GetString("type", ""),
 			Source:      request.GetString("source", ""),
+			Namespace:   request.GetString("namespace", ""),
 			People:      stringSliceArg(request, "people"),
 			Topics:      stringSliceArg(request, "topics"),
 			ActionItems: stringSliceArg(request, "action_items"),
@@ -114,10 +119,11 @@ func storeThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 		}
 
 		result, _ := json.Marshal(map[string]string{
-			"id":       t.ID,
-			"status":   "stored",
-			"message":  fmt.Sprintf("Thought stored with ID %s", t.ID),
-			"reminder": "Continue storing observations after every significant action!",
+			"id":        t.ID,
+			"status":    "stored",
+			"namespace": t.Namespace,
+			"message":   fmt.Sprintf("Thought stored with ID %s in namespace '%s'", t.ID, t.Namespace),
+			"reminder":  "Continue storing observations after every significant action!",
 		})
 		return mcp.NewToolResultText(string(result)), nil
 	}

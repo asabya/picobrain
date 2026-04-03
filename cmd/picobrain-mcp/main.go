@@ -20,13 +20,15 @@ func main() {
 	modelCache := flag.String("model-cache", defaults.ModelCacheDir, "directory to cache downloaded models")
 	noAutoDownload := flag.Bool("no-auto-download", false, "disable automatic model download (fail if model not cached)")
 	port := flag.String("port", "8080", "HTTP listen port")
+	namespace := flag.String("namespace", defaults.DefaultNamespace, "default namespace for thoughts (e.g., 'default', 'project-alpha')")
 	flag.Parse()
 
 	cfg := picobrain.Config{
-		DBPath:        *dbPath,
-		EmbedModel:    *embedModel,
-		ModelCacheDir: *modelCache,
-		AutoDownload:  !*noAutoDownload,
+		DBPath:           *dbPath,
+		EmbedModel:       *embedModel,
+		ModelCacheDir:    *modelCache,
+		AutoDownload:     !*noAutoDownload,
+		DefaultNamespace: *namespace,
 	}
 
 	brain, err := picobrain.New(cfg)

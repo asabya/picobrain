@@ -110,6 +110,10 @@ func (b *Brain) Store(ctx context.Context, t *Thought) error {
 		t.CreatedAt = time.Now()
 	}
 
+	if t.Namespace == "" {
+		t.Namespace = b.config.DefaultNamespace
+	}
+
 	if t.Embedding == nil {
 		emb, err := b.embedder.Embed(ctx, t.Content)
 		if err != nil {

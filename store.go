@@ -20,6 +20,7 @@ func initSchema(db *sql.DB) error {
 			type TEXT,
 			action_items TEXT,
 			source TEXT,
+			namespace TEXT DEFAULT 'default',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
@@ -35,6 +36,32 @@ func initSchema(db *sql.DB) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("create thought_vectors table: %w", err)
+	}
+
+	// Run migrations for existing databases
+	if err := migrateSchema(db); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
+
+	return nil
+}
+
+func migrateSchema(db *sql.DB) error {
+	// Check if namespace column exists
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('thoughts') WHERE name = 'namespace'
+	`).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check namespace column: %w", err)
+	}
+
+	// Add namespace column if it doesn't exist
+	if count == 0 {
+		_, err = db.Exec(`ALTER TABLE thoughts ADD COLUMN namespace TEXT DEFAULT 'default'`)
+		if err != nil {
+			return fmt.Errorf("add namespace column: %w", err)
+		}
 	}
 
 	return nil
@@ -54,11 +81,15 @@ func insertThoughtTx(exec dbExecer, t *Thought) error {
 		createdAt = time.Now()
 	}
 
+	if t.Namespace == "" {
+		t.Namespace = "default"
+	}
+
 	_, err := exec.Exec(`
-		INSERT INTO thoughts (id, content, people, topics, type, action_items, source, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO thoughts (id, content, people, topics, type, action_items, source, namespace, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, t.ID, t.Content, string(peopleJSON), string(topicsJSON),
-		t.Type, string(actionItemsJSON), t.Source, createdAt)
+		t.Type, string(actionItemsJSON), t.Source, t.Namespace, createdAt)
 	if err != nil {
 		return fmt.Errorf("insert thought: %w", err)
 	}
@@ -141,14 +172,14 @@ func deleteThought(db *sql.DB, id string) error {
 
 func getThought(db *sql.DB, id string) (*Thought, error) {
 	var t Thought
-	var peopleStr, topicsStr, actionItemsStr sql.NullString
+	var peopleStr, topicsStr, actionItemsStr, namespaceStr sql.NullString
 	var createdAt string
 
 	err := db.QueryRow(`
-		SELECT id, content, people, topics, type, action_items, source, created_at
+		SELECT id, content, people, topics, type, action_items, source, namespace, created_at
 		FROM thoughts WHERE id = ?
 	`, id).Scan(&t.ID, &t.Content, &peopleStr, &topicsStr,
-		&t.Type, &actionItemsStr, &t.Source, &createdAt)
+		&t.Type, &actionItemsStr, &t.Source, &namespaceStr, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("get thought %s: %w", id, err)
 	}
@@ -161,6 +192,9 @@ func getThought(db *sql.DB, id string) (*Thought, error) {
 	}
 	if actionItemsStr.Valid {
 		json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
+	}
+	if namespaceStr.Valid {
+		t.Namespace = namespaceStr.String
 	}
 
 	t.CreatedAt = parseTime(createdAt)
@@ -182,7 +216,7 @@ func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType stri
 
 	rows, err := db.Query(`
 		SELECT v.id, v.distance,
-		       t.content, t.people, t.topics, t.type, t.action_items, t.source, t.created_at
+		       t.content, t.people, t.topics, t.type, t.action_items, t.source, t.namespace, t.created_at
 		FROM thought_vectors v
 		JOIN thoughts t ON t.id = v.id
 		WHERE v.embedding MATCH ?
@@ -221,7 +255,7 @@ func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]T
 	var err error
 	if thoughtType != "" {
 		rows, err = db.Query(`
-			SELECT id, content, people, topics, type, action_items, source, created_at
+			SELECT id, content, people, topics, type, action_items, source, namespace, created_at
 			FROM thoughts
 			WHERE created_at >= ? AND type = ?
 			ORDER BY created_at DESC
@@ -229,7 +263,7 @@ func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]T
 		`, since.Format("2006-01-02 15:04:05"), thoughtType, limit)
 	} else {
 		rows, err = db.Query(`
-			SELECT id, content, people, topics, type, action_items, source, created_at
+			SELECT id, content, people, topics, type, action_items, source, namespace, created_at
 			FROM thoughts
 			WHERE created_at >= ?
 			ORDER BY created_at DESC
@@ -335,17 +369,17 @@ func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
 	var thoughts []Thought
 	for rows.Next() {
 		var t Thought
-		var peopleStr, topicsStr, actionItemsStr sql.NullString
+		var peopleStr, topicsStr, actionItemsStr, namespaceStr sql.NullString
 		var createdAt string
 
 		var err error
 		if withDistance {
 			err = rows.Scan(&t.ID, &t.Distance,
 				&t.Content, &peopleStr, &topicsStr,
-				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+				&t.Type, &actionItemsStr, &t.Source, &namespaceStr, &createdAt)
 		} else {
 			err = rows.Scan(&t.ID, &t.Content, &peopleStr, &topicsStr,
-				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+				&t.Type, &actionItemsStr, &t.Source, &namespaceStr, &createdAt)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("scan thought: %w", err)
@@ -359,6 +393,9 @@ func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
 		}
 		if actionItemsStr.Valid {
 			json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
+		}
+		if namespaceStr.Valid {
+			t.Namespace = namespaceStr.String
 		}
 		t.CreatedAt = parseTime(createdAt)
 
