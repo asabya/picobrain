@@ -18,6 +18,7 @@ func initSchema(db *sql.DB) error {
 			people TEXT,
 			topics TEXT,
 			type TEXT,
+			priority TEXT,
 			action_items TEXT,
 			source TEXT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -55,10 +56,10 @@ func insertThoughtTx(exec dbExecer, t *Thought) error {
 	}
 
 	_, err := exec.Exec(`
-		INSERT INTO thoughts (id, content, people, topics, type, action_items, source, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO thoughts (id, content, people, topics, type, priority, action_items, source, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, t.ID, t.Content, string(peopleJSON), string(topicsJSON),
-		t.Type, string(actionItemsJSON), t.Source, createdAt)
+		t.Type, t.Priority, string(actionItemsJSON), t.Source, createdAt)
 	if err != nil {
 		return fmt.Errorf("insert thought: %w", err)
 	}
@@ -141,14 +142,14 @@ func deleteThought(db *sql.DB, id string) error {
 
 func getThought(db *sql.DB, id string) (*Thought, error) {
 	var t Thought
-	var peopleStr, topicsStr, actionItemsStr sql.NullString
+	var peopleStr, topicsStr, actionItemsStr, priorityStr sql.NullString
 	var createdAt string
 
 	err := db.QueryRow(`
-		SELECT id, content, people, topics, type, action_items, source, created_at
+		SELECT id, content, people, topics, type, priority, action_items, source, created_at
 		FROM thoughts WHERE id = ?
 	`, id).Scan(&t.ID, &t.Content, &peopleStr, &topicsStr,
-		&t.Type, &actionItemsStr, &t.Source, &createdAt)
+		&t.Type, &priorityStr, &actionItemsStr, &t.Source, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("get thought %s: %w", id, err)
 	}
@@ -158,6 +159,9 @@ func getThought(db *sql.DB, id string) (*Thought, error) {
 	}
 	if topicsStr.Valid {
 		json.Unmarshal([]byte(topicsStr.String), &t.Topics)
+	}
+	if priorityStr.Valid {
+		t.Priority = priorityStr.String
 	}
 	if actionItemsStr.Valid {
 		json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
@@ -182,7 +186,7 @@ func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType stri
 
 	rows, err := db.Query(`
 		SELECT v.id, v.distance,
-		       t.content, t.people, t.topics, t.type, t.action_items, t.source, t.created_at
+		       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.created_at
 		FROM thought_vectors v
 		JOIN thoughts t ON t.id = v.id
 		WHERE v.embedding MATCH ?
@@ -221,7 +225,7 @@ func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]T
 	var err error
 	if thoughtType != "" {
 		rows, err = db.Query(`
-			SELECT id, content, people, topics, type, action_items, source, created_at
+			SELECT id, content, people, topics, type, priority, action_items, source, created_at
 			FROM thoughts
 			WHERE created_at >= ? AND type = ?
 			ORDER BY created_at DESC
@@ -229,7 +233,7 @@ func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]T
 		`, since.Format("2006-01-02 15:04:05"), thoughtType, limit)
 	} else {
 		rows, err = db.Query(`
-			SELECT id, content, people, topics, type, action_items, source, created_at
+			SELECT id, content, people, topics, type, priority, action_items, source, created_at
 			FROM thoughts
 			WHERE created_at >= ?
 			ORDER BY created_at DESC
@@ -269,6 +273,7 @@ func getStats(db *sql.DB) (*BrainStats, error) {
 	topicRows, err := db.Query(`
 		SELECT value, COUNT(*) as cnt
 		FROM thoughts, json_each(thoughts.topics)
+		WHERE value IS NOT NULL
 		GROUP BY value
 		ORDER BY cnt DESC
 		LIMIT 10
@@ -335,17 +340,17 @@ func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
 	var thoughts []Thought
 	for rows.Next() {
 		var t Thought
-		var peopleStr, topicsStr, actionItemsStr sql.NullString
+		var peopleStr, topicsStr, actionItemsStr, priorityStr sql.NullString
 		var createdAt string
 
 		var err error
 		if withDistance {
 			err = rows.Scan(&t.ID, &t.Distance,
 				&t.Content, &peopleStr, &topicsStr,
-				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+				&t.Type, &priorityStr, &actionItemsStr, &t.Source, &createdAt)
 		} else {
 			err = rows.Scan(&t.ID, &t.Content, &peopleStr, &topicsStr,
-				&t.Type, &actionItemsStr, &t.Source, &createdAt)
+				&t.Type, &priorityStr, &actionItemsStr, &t.Source, &createdAt)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("scan thought: %w", err)
@@ -356,6 +361,9 @@ func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
 		}
 		if topicsStr.Valid {
 			json.Unmarshal([]byte(topicsStr.String), &t.Topics)
+		}
+		if priorityStr.Valid {
+			t.Priority = priorityStr.String
 		}
 		if actionItemsStr.Valid {
 			json.Unmarshal([]byte(actionItemsStr.String), &t.ActionItems)
@@ -379,4 +387,53 @@ func parseTime(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// pruneOldThoughts deletes thoughts older than the given number of days,
+// excluding critical priority thoughts. Returns the number of thoughts deleted.
+func pruneOldThoughts(db *sql.DB, days int) (int, error) {
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	cutoffStr := cutoff.Format("2006-01-02 15:04:05")
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+		SELECT id FROM thoughts
+		WHERE created_at < ?
+		AND (priority IS NULL OR priority != 'critical')
+	`, cutoffStr)
+	if err != nil {
+		return 0, fmt.Errorf("query thoughts to prune: %w", err)
+	}
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan thought id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("rows error: %w", err)
+	}
+
+	for _, id := range ids {
+		if err := deleteThoughtTx(tx, id); err != nil {
+			return 0, fmt.Errorf("delete thought %s: %w", id, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return len(ids), nil
 }

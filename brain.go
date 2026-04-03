@@ -281,3 +281,22 @@ func (b *Brain) BulkImport(ctx context.Context, r io.Reader) (int, error) {
 
 	return count, nil
 }
+
+// Prune deletes thoughts older than the specified number of days,
+// excluding critical priority thoughts. Returns the number of thoughts deleted.
+func (b *Brain) Prune(ctx context.Context, days int) (int, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+
+	deleted, err := pruneOldThoughts(b.db, days)
+	if err != nil {
+		return 0, fmt.Errorf("prune thoughts: %w", err)
+	}
+
+	if deleted > 0 {
+		b.cache.Clear()
+	}
+
+	return deleted, nil
+}

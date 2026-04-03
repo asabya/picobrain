@@ -20,6 +20,8 @@ func main() {
 	modelCache := flag.String("model-cache", defaults.ModelCacheDir, "directory to cache downloaded models")
 	noAutoDownload := flag.Bool("no-auto-download", false, "disable automatic model download (fail if model not cached)")
 	port := flag.String("port", "8080", "HTTP listen port")
+	autoPruneDays := flag.Int("auto-prune-days", defaults.AutoPruneDays, "automatically prune thoughts older than N days (0 to disable)")
+	prune := flag.Bool("prune", false, "run manual prune and exit")
 	flag.Parse()
 
 	cfg := picobrain.Config{
@@ -27,6 +29,7 @@ func main() {
 		EmbedModel:    *embedModel,
 		ModelCacheDir: *modelCache,
 		AutoDownload:  !*noAutoDownload,
+		AutoPruneDays: *autoPruneDays,
 	}
 
 	brain, err := picobrain.New(cfg)
@@ -35,6 +38,27 @@ func main() {
 		os.Exit(1)
 	}
 	defer brain.Close()
+
+	if *prune {
+		ctx := context.Background()
+		deleted, err := brain.Prune(ctx, cfg.AutoPruneDays)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "prune failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Pruned %d thought(s) older than %d days\n", deleted, cfg.AutoPruneDays)
+		os.Exit(0)
+	}
+
+	if cfg.AutoPruneDays > 0 {
+		ctx := context.Background()
+		deleted, err := brain.Prune(ctx, cfg.AutoPruneDays)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "auto-prune failed: %v\n", err)
+		} else if deleted > 0 {
+			fmt.Printf("Auto-pruned %d thought(s) older than %d days\n", deleted, cfg.AutoPruneDays)
+		}
+	}
 
 	s := server.NewMCPServer("picobrain", "0.1.0",
 		server.WithPromptCapabilities(false),

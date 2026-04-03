@@ -11,6 +11,7 @@ type Config struct {
 	ModelCacheDir string
 	AutoDownload  bool
 	CacheSize     int
+	AutoPruneDays int
 }
 
 func DefaultConfig() Config {
@@ -20,5 +21,6 @@ func DefaultConfig() Config {
 		EmbedModel:    "nomic-embed-text-v1.5",
 		ModelCacheDir: filepath.Join(home, ".picobrain", "models"),
 		AutoDownload:  true,
+		AutoPruneDays: 30,
 	}
 }

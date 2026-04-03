@@ -375,3 +375,230 @@ func TestOllamaEmbedder(t *testing.T) {
 		t.Errorf("expected 768 dims, got %d", len(emb))
 	}
 }
+
+// ==================== Auto-Pruning Tests ====================
+
+func TestConfigDefaultAutoPruneDays(t *testing.T) {
+	defaults := DefaultConfig()
+	if defaults.AutoPruneDays != 30 {
+		t.Errorf("expected AutoPruneDays to default to 30, got %d", defaults.AutoPruneDays)
+	}
+}
+
+func TestThoughtPriorityField(t *testing.T) {
+	// Test that priority field can be set and retrieved
+	thought := &Thought{
+		Content:  "Test thought with priority",
+		Priority: "high",
+	}
+
+	if thought.Priority != "high" {
+		t.Errorf("expected priority to be 'high', got %s", thought.Priority)
+	}
+
+	// Test default priority is empty (not critical)
+	thought2 := &Thought{
+		Content: "Test thought without priority",
+	}
+
+	if thought2.Priority != "" {
+		t.Errorf("expected empty priority by default, got %s", thought2.Priority)
+	}
+}
+
+func TestBrainPruneDeletesOldNonCriticalThoughts(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Create thoughts with old timestamps (simulating 40 days ago)
+	oldTime := time.Now().Add(-40 * 24 * time.Hour)
+
+	// Store an old low priority thought
+	oldLow := &Thought{
+		Content:   "Old low priority thought",
+		Priority:  "low",
+		CreatedAt: oldTime,
+	}
+	if err := brain.Store(ctx, oldLow); err != nil {
+		t.Fatalf("Store old low priority: %v", err)
+	}
+
+	// Prune with 30 days threshold
+	deleted, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	if deleted != 1 {
+		t.Errorf("expected 1 deleted, got %d", deleted)
+	}
+
+	// Verify the thought was deleted
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalThoughts != 0 {
+		t.Errorf("expected 0 thoughts after prune, got %d", stats.TotalThoughts)
+	}
+}
+
+func TestBrainPruneSkipsCriticalThoughts(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Create thoughts with old timestamps
+	oldTime := time.Now().Add(-40 * 24 * time.Hour)
+
+	// Store old critical and non-critical thoughts
+	oldCritical := &Thought{
+		Content:   "Old critical thought",
+		Priority:  "critical",
+		CreatedAt: oldTime,
+	}
+	oldNormal := &Thought{
+		Content:   "Old normal thought",
+		CreatedAt: oldTime,
+	}
+
+	if err := brain.Store(ctx, oldCritical); err != nil {
+		t.Fatalf("Store old critical: %v", err)
+	}
+	if err := brain.Store(ctx, oldNormal); err != nil {
+		t.Fatalf("Store old normal: %v", err)
+	}
+
+	// Prune with 30 days threshold
+	deleted, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	if deleted != 1 {
+		t.Errorf("expected 1 deleted (only normal), got %d", deleted)
+	}
+
+	// Verify only critical thought remains
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalThoughts != 1 {
+		t.Errorf("expected 1 thought (critical), got %d", stats.TotalThoughts)
+	}
+
+	// Verify it's the critical one
+	results, _ := brain.ListRecent(ctx, oldTime.Add(-1*time.Hour), 10, "")
+	if len(results) != 1 || results[0].Priority != "critical" {
+		t.Error("expected critical thought to remain")
+	}
+}
+
+func TestBrainPruneSkipsRecentThoughts(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	// Store a recent thought
+	recentThought := &Thought{
+		Content:  "Recent thought",
+		Priority: "low",
+	}
+	if err := brain.Store(ctx, recentThought); err != nil {
+		t.Fatalf("Store recent: %v", err)
+	}
+
+	// Prune with 30 days threshold
+	deleted, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted (recent thought), got %d", deleted)
+	}
+
+	// Verify thought still exists
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalThoughts != 1 {
+		t.Errorf("expected 1 thought to remain, got %d", stats.TotalThoughts)
+	}
+}
+
+func TestBrainPruneWithAllPriorities(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	oldTime := time.Now().Add(-40 * 24 * time.Hour)
+
+	// Store old thoughts with different priorities
+	thoughts := []*Thought{
+		{Content: "Critical thought", Priority: "critical", CreatedAt: oldTime},
+		{Content: "High priority thought", Priority: "high", CreatedAt: oldTime},
+		{Content: "Medium priority thought", Priority: "medium", CreatedAt: oldTime},
+		{Content: "Low priority thought", Priority: "low", CreatedAt: oldTime},
+		{Content: "No priority thought", CreatedAt: oldTime},
+	}
+
+	for _, th := range thoughts {
+		if err := brain.Store(ctx, th); err != nil {
+			t.Fatalf("Store: %v", err)
+		}
+	}
+
+	// Prune - should only delete non-critical
+	deleted, err := brain.Prune(ctx, 30)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	if deleted != 4 {
+		t.Errorf("expected 4 deleted (all except critical), got %d", deleted)
+	}
+
+	// Verify only critical remains
+	stats, err := brain.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalThoughts != 1 {
+		t.Errorf("expected 1 thought (critical), got %d", stats.TotalThoughts)
+	}
+}
+
+func TestBrainPruneUpdatesCache(t *testing.T) {
+	brain := testBrain(t)
+	ctx := context.Background()
+
+	oldTime := time.Now().Add(-40 * 24 * time.Hour)
+
+	// Store an old thought
+	oldThought := &Thought{
+		Content:   "Old thought to be pruned",
+		CreatedAt: oldTime,
+	}
+	if err := brain.Store(ctx, oldThought); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+
+	// Verify it's in cache by getting it
+	cached, err := brain.Get(ctx, oldThought.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if cached.ID != oldThought.ID {
+		t.Error("expected thought to be in cache")
+	}
+
+	// Prune
+	brain.Prune(ctx, 30)
+
+	// Verify removed from cache (Get should still work via DB but cache should be cleared)
+	// We can verify by checking stats
+	stats, _ := brain.Stats(ctx)
+	if stats.TotalThoughts != 0 {
+		t.Error("expected thought to be deleted and cache cleared")
+	}
+}

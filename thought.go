@@ -9,6 +9,7 @@ type Thought struct {
 	People      []string  `json:"people,omitempty"`
 	Topics      []string  `json:"topics,omitempty"`
 	Type        string    `json:"type,omitempty"`
+	Priority    string    `json:"priority,omitempty"`
 	ActionItems []string  `json:"action_items,omitempty"`
 	Source      string    `json:"source,omitempty"`
 	CreatedAt   time.Time `json:"created_at,omitempty"`
