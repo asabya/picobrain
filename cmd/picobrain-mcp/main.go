@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/asabya/picobrain"
@@ -13,16 +14,42 @@ import (
 )
 
 func main() {
+	if len(os.Args) < 2 {
+		runServer(os.Args[1:])
+		return
+	}
+
+	switch os.Args[1] {
+	case "export":
+		runExport(os.Args[2:])
+	case "import":
+		runImport(os.Args[2:])
+	case "serve", "server":
+		runServer(os.Args[2:])
+	default:
+		if strings.HasPrefix(os.Args[1], "-") {
+			runServer(os.Args[1:])
+		} else {
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
+			fmt.Fprintf(os.Stderr, "Usage: picobrain [command] [options]\n")
+			fmt.Fprintf(os.Stderr, "Commands: serve, export, import\n")
+			os.Exit(1)
+		}
+	}
+}
+
+func runServer(args []string) {
 	defaults := picobrain.DefaultConfig()
 
-	dbPath := flag.String("db", defaults.DBPath, "path to brain database")
-	embedModel := flag.String("embed-model", defaults.EmbedModel, "embedding model name (e.g. nomic-embed-text-v1.5)")
-	modelCache := flag.String("model-cache", defaults.ModelCacheDir, "directory to cache downloaded models")
-	noAutoDownload := flag.Bool("no-auto-download", false, "disable automatic model download (fail if model not cached)")
-	port := flag.String("port", "8080", "HTTP listen port")
-	autoPruneDays := flag.Int("auto-prune-days", defaults.AutoPruneDays, "automatically prune thoughts older than N days (0 to disable)")
-	prune := flag.Bool("prune", false, "run manual prune and exit")
-	flag.Parse()
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	dbPath := fs.String("db", defaults.DBPath, "path to brain database")
+	embedModel := fs.String("embed-model", defaults.EmbedModel, "embedding model name (e.g. nomic-embed-text-v1.5)")
+	modelCache := fs.String("model-cache", defaults.ModelCacheDir, "directory to cache downloaded models")
+	noAutoDownload := fs.Bool("no-auto-download", false, "disable automatic model download (fail if model not cached)")
+	port := fs.String("port", "8080", "HTTP listen port")
+	autoPruneDays := fs.Int("auto-prune-days", defaults.AutoPruneDays, "automatically prune thoughts older than N days (0 to disable)")
+	prune := fs.Bool("prune", false, "run manual prune and exit")
+	fs.Parse(args)
 
 	cfg := picobrain.Config{
 		DBPath:        *dbPath,
@@ -92,6 +119,30 @@ func main() {
 	httpServer := server.NewStreamableHTTPServer(s)
 	if err := httpServer.Start(":" + *port); err != nil {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runExport(args []string) {
+	cmd := newExportCommand()
+	if err := cmd.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runImport(args []string) {
+	cmd := newImportCommand()
+	if err := cmd.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }

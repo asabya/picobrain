@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
@@ -458,6 +459,58 @@ func scanThoughts(rows *sql.Rows, withDistance bool) ([]Thought, error) {
 		thoughts = append(thoughts, t)
 	}
 	return thoughts, rows.Err()
+}
+
+func queryThoughtsWithFilter(db *sql.DB, filter ExportFilter) ([]Thought, error) {
+	query := `
+		SELECT id, content, people, topics, type, action_items, source, created_at
+		FROM thoughts
+		WHERE 1=1
+	`
+	args := []any{}
+
+	if filter.Since != nil {
+		query += " AND created_at >= ?"
+		args = append(args, filter.Since.Format("2006-01-02 15:04:05"))
+	}
+	if filter.Until != nil {
+		query += " AND created_at <= ?"
+		args = append(args, filter.Until.Format("2006-01-02 15:04:05"))
+	}
+	if filter.Type != "" {
+		query += " AND type = ?"
+		args = append(args, filter.Type)
+	}
+	if filter.Source != "" {
+		query += " AND source = ?"
+		args = append(args, filter.Source)
+	}
+	if len(filter.Topics) > 0 {
+		placeholders := make([]string, len(filter.Topics))
+		for i := range filter.Topics {
+			placeholders[i] = "?"
+			args = append(args, filter.Topics[i])
+		}
+		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM json_each(topics) WHERE value IN (%s))", strings.Join(placeholders, ","))
+	}
+	if len(filter.People) > 0 {
+		placeholders := make([]string, len(filter.People))
+		for i := range filter.People {
+			placeholders[i] = "?"
+			args = append(args, filter.People[i])
+		}
+		query += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM json_each(people) WHERE value IN (%s))", strings.Join(placeholders, ","))
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query thoughts: %w", err)
+	}
+	defer rows.Close()
+
+	return scanThoughts(rows, false)
 }
 
 func parseTime(s string) time.Time {
