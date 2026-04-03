@@ -172,27 +172,41 @@ func getThought(db *sql.DB, id string) (*Thought, error) {
 	return &t, nil
 }
 
-func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType string) ([]Thought, error) {
+func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType string, timeRange *TimeRange) ([]Thought, error) {
 	vec, err := sqlite_vec.SerializeFloat32(embedding)
 	if err != nil {
 		return nil, fmt.Errorf("serialize query vector: %w", err)
 	}
 
-	// When filtering by type, fetch more to account for filtered-out results
 	searchLimit := limit
-	if thoughtType != "" {
+	if thoughtType != "" || timeRange != nil {
 		searchLimit = limit * 3
 	}
 
-	rows, err := db.Query(`
-		SELECT v.id, v.distance,
-		       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.created_at
-		FROM thought_vectors v
-		JOIN thoughts t ON t.id = v.id
-		WHERE v.embedding MATCH ?
-		AND k = ?
-		ORDER BY v.distance
-	`, vec, searchLimit)
+	var rows *sql.Rows
+	if timeRange != nil {
+		rows, err = db.Query(`
+			SELECT v.id, v.distance,
+			       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.created_at
+			FROM thought_vectors v
+			JOIN thoughts t ON t.id = v.id
+			WHERE v.embedding MATCH ?
+			AND k = ?
+			AND t.created_at >= ?
+			AND t.created_at < ?
+			ORDER BY v.distance
+		`, vec, searchLimit, timeRange.Start.Format("2006-01-02 15:04:05"), timeRange.End.Format("2006-01-02 15:04:05"))
+	} else {
+		rows, err = db.Query(`
+			SELECT v.id, v.distance,
+			       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.created_at
+			FROM thought_vectors v
+			JOIN thoughts t ON t.id = v.id
+			WHERE v.embedding MATCH ?
+			AND k = ?
+			ORDER BY v.distance
+		`, vec, searchLimit)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("vector search: %w", err)
 	}
@@ -204,6 +218,9 @@ func searchByVector(db *sql.DB, embedding []float32, limit int, thoughtType stri
 	}
 
 	if thoughtType == "" {
+		if len(all) > limit {
+			return all[:limit], nil
+		}
 		return all, nil
 	}
 
@@ -236,7 +253,7 @@ func searchByVectorWithFilters(db *sql.DB, embedding []float32, limit int, filte
 	// This applies filters BEFORE vector ranking for efficiency
 	query := `
 		SELECT v.id, v.distance,
-		       t.content, t.people, t.topics, t.type, t.action_items, t.source, t.created_at
+		       t.content, t.people, t.topics, t.type, t.priority, t.action_items, t.source, t.created_at
 		FROM thought_vectors v
 		JOIN thoughts t ON t.id = v.id
 		WHERE v.embedding MATCH ?

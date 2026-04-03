@@ -29,14 +29,15 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 	// semantic_search
 	s.AddTool(
 		mcp.NewTool("semantic_search",
-			mcp.WithDescription("Search your memory for relevant thoughts, observations, and facts. Use this BEFORE asking the user to repeat information they may have already told you. Searches by semantic meaning, not just keywords."),
-			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'")),
+			mcp.WithDescription("Search your memory for relevant thoughts, observations, and facts. Use this BEFORE asking the user to repeat information they may have already told you. Searches by semantic meaning, not just keywords. Supports natural time filters like 'today', 'yesterday', 'last week', '3 days ago' in the query, or use explicit time_filter parameter."),
+			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'. You can include time expressions like 'today', 'yesterday', 'last week' which will be automatically extracted.")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 10)")),
 			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty to search all types.")),
 			mcp.WithArray("topics", mcp.Description("Filter by topics - only return thoughts that have ALL specified topics. Example: ['auth', 'security'] returns thoughts tagged with both auth AND security.")),
 			mcp.WithArray("people", mcp.Description("Filter by people mentioned - only return thoughts that mention ALL specified people. Example: ['Alice', 'Bob'] returns thoughts mentioning both Alice AND Bob.")),
 			mcp.WithString("before", mcp.Description("Filter thoughts created before this ISO8601 datetime. Example: 2024-01-15T10:30:00Z")),
 			mcp.WithString("after", mcp.Description("Filter thoughts created after this ISO8601 datetime. Example: 2024-01-01T00:00:00Z")),
+			mcp.WithString("time_filter", mcp.Description("Optional time filter for temporal queries. Supports: today, yesterday, this week, last week, this month, last month, N days/weeks/months ago, YYYY-MM-DD. Can also embed time expressions in the query itself (e.g., 'decisions from last week').")),
 		),
 		semanticSearchHandler(brain),
 	)
@@ -135,10 +136,12 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 		}
 
 		limit := request.GetInt("limit", 10)
+		thoughtType := request.GetString("type", "")
+		timeFilter := request.GetString("time_filter", "")
 
 		// Build filters from request parameters
 		filters := SearchFilters{
-			Type:   request.GetString("type", ""),
+			Type:   thoughtType,
 			Topics: stringSliceArg(request, "topics"),
 			People: stringSliceArg(request, "people"),
 		}
@@ -155,20 +158,43 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 			}
 		}
 
+		// Handle time_filter parameter or extract from query
+		var timeRange *TimeRange
+		cleanQuery := query
+
+		if timeFilter != "" {
+			tr, err := ParseTimeExpression(timeFilter, time.Now())
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid time filter: %v", err)), nil
+			}
+			timeRange = &tr
+			// Override before/after if time_filter is provided
+			filters.Before = timeRange.End
+			filters.After = timeRange.Start
+		} else {
+			result := ExtractTimeFilterFromQuery(query, time.Now())
+			if result.HasFilter {
+				timeRange = &TimeRange{Start: result.Start, End: result.End}
+				cleanQuery = result.CleanQuery
+				// Override before/after if extracted from query
+				filters.Before = timeRange.End
+				filters.After = timeRange.Start
+			}
+		}
+
 		// Check if we need to use the new filtered search or legacy search
 		// Legacy search is used when only type is specified (for backward compatibility)
 		var results []Thought
 		if filters.Type != "" && len(filters.Topics) == 0 && len(filters.People) == 0 && filters.Before.IsZero() && filters.After.IsZero() {
 			// Use legacy search for backward compatibility
-			results, err = brain.Search(ctx, query, limit, filters.Type)
+			results, err = brain.Search(ctx, cleanQuery, limit, filters.Type, nil)
 		} else if len(filters.Topics) > 0 || len(filters.People) > 0 || !filters.Before.IsZero() || !filters.After.IsZero() || filters.Type != "" {
 			// Use new filtered search when any filter is specified
-			results, err = brain.SearchWithFilters(ctx, query, limit, filters)
+			results, err = brain.SearchWithFilters(ctx, cleanQuery, limit, filters)
 		} else {
 			// No filters at all - use legacy search
-			results, err = brain.Search(ctx, query, limit, "")
+			results, err = brain.Search(ctx, cleanQuery, limit, "", nil)
 		}
-
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 		}
