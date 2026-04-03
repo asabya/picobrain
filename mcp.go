@@ -33,6 +33,10 @@ func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
 			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 10)")),
 			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty to search all types.")),
+			mcp.WithArray("topics", mcp.Description("Filter by topics - only return thoughts that have ALL specified topics. Example: ['auth', 'security'] returns thoughts tagged with both auth AND security.")),
+			mcp.WithArray("people", mcp.Description("Filter by people mentioned - only return thoughts that mention ALL specified people. Example: ['Alice', 'Bob'] returns thoughts mentioning both Alice AND Bob.")),
+			mcp.WithString("before", mcp.Description("Filter thoughts created before this ISO8601 datetime. Example: 2024-01-15T10:30:00Z")),
+			mcp.WithString("after", mcp.Description("Filter thoughts created after this ISO8601 datetime. Example: 2024-01-01T00:00:00Z")),
 		),
 		semanticSearchHandler(brain),
 	)
@@ -131,9 +135,40 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 		}
 
 		limit := request.GetInt("limit", 10)
-		thoughtType := request.GetString("type", "")
 
-		results, err := brain.Search(ctx, query, limit, thoughtType)
+		// Build filters from request parameters
+		filters := SearchFilters{
+			Type:   request.GetString("type", ""),
+			Topics: stringSliceArg(request, "topics"),
+			People: stringSliceArg(request, "people"),
+		}
+
+		// Parse date filters if provided
+		if beforeStr := request.GetString("before", ""); beforeStr != "" {
+			if before, err := time.Parse(time.RFC3339, beforeStr); err == nil {
+				filters.Before = before
+			}
+		}
+		if afterStr := request.GetString("after", ""); afterStr != "" {
+			if after, err := time.Parse(time.RFC3339, afterStr); err == nil {
+				filters.After = after
+			}
+		}
+
+		// Check if we need to use the new filtered search or legacy search
+		// Legacy search is used when only type is specified (for backward compatibility)
+		var results []Thought
+		if filters.Type != "" && len(filters.Topics) == 0 && len(filters.People) == 0 && filters.Before.IsZero() && filters.After.IsZero() {
+			// Use legacy search for backward compatibility
+			results, err = brain.Search(ctx, query, limit, filters.Type)
+		} else if len(filters.Topics) > 0 || len(filters.People) > 0 || !filters.Before.IsZero() || !filters.After.IsZero() || filters.Type != "" {
+			// Use new filtered search when any filter is specified
+			results, err = brain.SearchWithFilters(ctx, query, limit, filters)
+		} else {
+			// No filters at all - use legacy search
+			results, err = brain.Search(ctx, query, limit, "")
+		}
+
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 		}

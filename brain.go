@@ -139,6 +139,19 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType
 	return searchByVector(b.db, queryEmb, limit, thoughtType)
 }
 
+func (b *Brain) SearchWithFilters(ctx context.Context, query string, limit int, filters SearchFilters) ([]Thought, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	queryEmb, err := b.embedder.Embed(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+
+	return searchByVectorWithFilters(b.db, queryEmb, limit, filters)
+}
+
 func (b *Brain) ListRecent(ctx context.Context, since time.Time, limit int, thoughtType string) ([]Thought, error) {
 	if limit <= 0 {
 		limit = 20
