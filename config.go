@@ -10,6 +10,7 @@ type Config struct {
 	EmbedModel    string
 	ModelCacheDir string
 	AutoDownload  bool
+	CacheSize     int
 }
 
 func DefaultConfig() Config {

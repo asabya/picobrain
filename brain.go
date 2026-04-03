@@ -19,6 +19,7 @@ type Brain struct {
 	db       *sql.DB
 	embedder Embedder
 	config   Config
+	cache    *ThoughtCache
 }
 
 func New(cfg Config) (*Brain, error) {
@@ -51,7 +52,12 @@ func New(cfg Config) (*Brain, error) {
 		return nil, fmt.Errorf("create embedder: %w", err)
 	}
 
-	return &Brain{db: db, embedder: embedder, config: cfg}, nil
+	return &Brain{
+		db:       db,
+		embedder: embedder,
+		config:   cfg,
+		cache:    NewThoughtCache(cfg.CacheSize),
+	}, nil
 }
 
 // NewWithEmbedder creates a Brain with a provided embedder.
@@ -80,7 +86,12 @@ func NewWithEmbedder(cfg Config, emb Embedder) (*Brain, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 
-	return &Brain{db: db, embedder: emb, config: cfg}, nil
+	return &Brain{
+		db:       db,
+		embedder: emb,
+		config:   cfg,
+		cache:    NewThoughtCache(cfg.CacheSize),
+	}, nil
 }
 
 func (b *Brain) Close() error {
@@ -107,7 +118,12 @@ func (b *Brain) Store(ctx context.Context, t *Thought) error {
 		t.Embedding = emb
 	}
 
-	return insertThought(b.db, t)
+	if err := insertThought(b.db, t); err != nil {
+		return err
+	}
+
+	b.cache.Put(*t)
+	return nil
 }
 
 func (b *Brain) Search(ctx context.Context, query string, limit int, thoughtType string) ([]Thought, error) {
@@ -127,15 +143,50 @@ func (b *Brain) ListRecent(ctx context.Context, since time.Time, limit int, thou
 	if limit <= 0 {
 		limit = 20
 	}
-	return listRecent(b.db, since, limit, thoughtType)
+
+	thoughts, err := listRecent(b.db, since, limit, thoughtType)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range thoughts {
+		b.cache.Put(thoughts[i])
+	}
+
+	return thoughts, nil
 }
 
 func (b *Brain) Stats(ctx context.Context) (*BrainStats, error) {
 	return getStats(b.db)
 }
 
+func (b *Brain) Get(ctx context.Context, id string) (*Thought, error) {
+	if thought, found := b.cache.Get(id); found {
+		return &thought, nil
+	}
+
+	thought, err := getThought(b.db, id)
+	if err != nil {
+		return nil, err
+	}
+
+	b.cache.Put(*thought)
+	return thought, nil
+}
+
+func (b *Brain) GetRecent(limit int) []Thought {
+	if limit <= 0 {
+		limit = 20
+	}
+	return b.cache.GetRecent(limit)
+}
+
 func (b *Brain) Delete(ctx context.Context, id string) error {
-	return deleteThought(b.db, id)
+	if err := deleteThought(b.db, id); err != nil {
+		return err
+	}
+	b.cache.Remove(id)
+	return nil
 }
 
 type ReflectResult struct {
@@ -162,6 +213,13 @@ func (b *Brain) Reflect(ctx context.Context, deleteIDs []string, newThoughts []*
 
 	if err := reflectTx(b.db, deleteIDs, newThoughts); err != nil {
 		return nil, err
+	}
+
+	for _, id := range deleteIDs {
+		b.cache.Remove(id)
+	}
+	for _, t := range newThoughts {
+		b.cache.Put(*t)
 	}
 
 	stored := make([]string, len(newThoughts))
