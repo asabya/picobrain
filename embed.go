@@ -389,13 +389,11 @@ func downloadModel(repo, filename, destPath string) error {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// Ensure cache directory exists
 	dir := filepath.Dir(destPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create cache dir: %w", err)
 	}
 
-	// Download to temp file then rename
 	tmp, err := os.CreateTemp(dir, ".download-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)

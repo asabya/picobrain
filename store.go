@@ -371,7 +371,6 @@ func listRecent(db *sql.DB, since time.Time, limit int, thoughtType string) ([]T
 func getStats(db *sql.DB) (*BrainStats, error) {
 	stats := &BrainStats{}
 
-	// Total and this week
 	err := db.QueryRow("SELECT COUNT(*) FROM thoughts").Scan(&stats.TotalThoughts)
 	if err != nil {
 		return nil, fmt.Errorf("count thoughts: %w", err)
