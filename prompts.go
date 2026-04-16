@@ -27,10 +27,10 @@ CLAIM RULES:
 → Prefer multiple precise claims over one vague claim
 
 EXAMPLE:
-summary: "SpaCy is optional and server startup must degrade gracefully when it is absent."
+summary: "Picobrain startup requires SpaCy and must fail fast when parser initialization fails."
 claims:
-1. subject=auto_graph predicate=requires object=spacy_parser polarity=affirmed cardinality=many status=active
-2. subject=server_startup predicate=crashes_when_missing object=spacy_parser polarity=negated cardinality=many status=active
+1. subject=picobrain_startup predicate=requires object=spacy_parser polarity=affirmed cardinality=many status=active
+2. subject=server_startup predicate=continues_without object=spacy_parser polarity=negated cardinality=many status=active
 
 CRITICAL RULES:
 → STORE EARLY, STORE OFTEN — When in doubt, STORE IT

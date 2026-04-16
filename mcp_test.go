@@ -45,8 +45,8 @@ func TestStoreThoughtHandlerStoresStructuredThought(t *testing.T) {
 	brain := testBrain(t)
 	handler := storeThoughtHandler(brain)
 	result, err := handler(context.Background(), toolRequest("store_thought", map[string]any{
-		"summary": "SpaCy is optional during startup.",
-		"claims":  []any{structuredClaim("server_startup", "requires", "spacy_parser")},
+		"summary": "Picobrain startup requires SpaCy.",
+		"claims":  []any{structuredClaim("picobrain_startup", "requires", "spacy_parser")},
 		"type":    "decision",
 		"topics":  []any{"depgraph"},
 	}))
@@ -62,7 +62,7 @@ func TestStoreThoughtHandlerStoresStructuredThought(t *testing.T) {
 	if err != nil {
 		t.Fatalf("brain.Get: %v", err)
 	}
-	if stored.Summary != "SpaCy is optional during startup." {
+	if stored.Summary != "Picobrain startup requires SpaCy." {
 		t.Fatalf("unexpected summary: %q", stored.Summary)
 	}
 	if stored.Namespace != "default" {
