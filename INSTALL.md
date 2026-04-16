@@ -28,6 +28,7 @@ picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 80
 ```
 
 This downloads both `picobrain` and `llama-server` binaries to `~/.picobrain/bin`.
+On startup, Picobrain also requires a healthy SpaCy parser sidecar. If no existing sidecar is found in `PICOBRAIN_SPACY_DIR` or `~/.picobrain/spacy`, startup attempts to provision it before the MCP server becomes ready.
 
 ### Docker (keeps the embedder self-contained)
 
@@ -51,7 +52,7 @@ go build -o picobrain ./cmd/picobrain-mcp
 ./picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
 ```
 
-Set `PICOBRAIN_LLAMA_SERVER_BIN` if your `llama-server` binary lives outside `PATH`. Use `--no-auto-download` to prevent runtime downloads when running in air-gapped environments.
+Set `PICOBRAIN_LLAMA_SERVER_BIN` if your `llama-server` binary lives outside `PATH`. Use `--no-auto-download` to prevent runtime downloads when running in air-gapped environments. If you manage the parser sidecar yourself, set `PICOBRAIN_SPACY_DIR` to the directory containing the SpaCy `server.py` entrypoint and virtualenv.
 
 ## Step 2: Verify the HTTP MCP endpoint
 

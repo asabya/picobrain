@@ -5,6 +5,14 @@ import (
 	"testing"
 )
 
+func legacyOptionalSpacyPhrases() []string {
+	return []string{
+		"SpaCy is " + "optional",
+		"degrade " + "gracefully",
+		"auto" + "_graph",
+	}
+}
+
 func TestObserverPromptNotEmpty(t *testing.T) {
 	if ObserverPrompt == "" {
 		t.Fatal("ObserverPrompt should not be empty")
@@ -33,12 +41,7 @@ func TestPromptsMentionStructuredClaims(t *testing.T) {
 }
 
 func TestObserverPromptRemovesLegacyOptionalSpacyGuidance(t *testing.T) {
-	legacyPhrases := []string{
-		"SpaCy is optional",
-		"degrade gracefully",
-		"auto_graph",
-	}
-	for _, phrase := range legacyPhrases {
+	for _, phrase := range legacyOptionalSpacyPhrases() {
 		if strings.Contains(ObserverPrompt, phrase) {
 			t.Fatalf("ObserverPrompt should not contain legacy SpaCy optionality phrase %q", phrase)
 		}
