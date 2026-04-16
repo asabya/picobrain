@@ -3,6 +3,7 @@ package picobrain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,8 +28,26 @@ func (m *mockEmbedder) Close() error {
 	return nil
 }
 
+type trackingEmbedder struct {
+	mockEmbedder
+	closeCalls int
+}
+
+func (m *trackingEmbedder) Close() error {
+	m.closeCalls++
+	return nil
+}
+
 func testBrain(t *testing.T) *Brain {
 	t.Helper()
+
+	originalFactory := depParserFactory
+	depParserFactory = func(string) (*DepParser, error) {
+		return &DepParser{}, nil
+	}
+	t.Cleanup(func() {
+		depParserFactory = originalFactory
+	})
 
 	cfg := Config{
 		DBPath:        ":memory:",
@@ -50,6 +69,66 @@ func TestNewBrain(t *testing.T) {
 	brain := testBrain(t)
 	if brain == nil {
 		t.Fatal("expected non-nil brain")
+	}
+}
+
+func TestConstructorsRequireMandatorySpacyStartup(t *testing.T) {
+	originalFactory := depParserFactory
+	depParserFactory = func(string) (*DepParser, error) {
+		return nil, errors.New("spacy bootstrap failed")
+	}
+	t.Cleanup(func() {
+		depParserFactory = originalFactory
+	})
+
+	cfg := Config{
+		DBPath:        ":memory:",
+		EmbedModel:    "mock",
+		ModelCacheDir: "",
+		AutoDownload:  false,
+	}
+
+	brain, err := NewWithEmbedder(cfg, &mockEmbedder{dim: 768})
+	if err == nil {
+		if brain != nil {
+			brain.Close()
+		}
+		t.Fatal("expected NewWithEmbedder to fail when SpaCy startup fails")
+	}
+	if !strings.Contains(err.Error(), "spacy") {
+		t.Fatalf("expected SpaCy startup error, got %v", err)
+	}
+	if brain != nil {
+		t.Fatal("expected nil brain on constructor failure")
+	}
+}
+
+func TestNewWithEmbedderClosesEmbedderOnSpacyFailure(t *testing.T) {
+	originalFactory := depParserFactory
+	depParserFactory = func(string) (*DepParser, error) {
+		return nil, errors.New("health check failed")
+	}
+	t.Cleanup(func() {
+		depParserFactory = originalFactory
+	})
+
+	cfg := Config{
+		DBPath:        ":memory:",
+		EmbedModel:    "mock",
+		ModelCacheDir: "",
+		AutoDownload:  false,
+	}
+	embedder := &trackingEmbedder{mockEmbedder: mockEmbedder{dim: 768}}
+
+	brain, err := NewWithEmbedder(cfg, embedder)
+	if err == nil {
+		if brain != nil {
+			brain.Close()
+		}
+		t.Fatal("expected constructor to fail")
+	}
+	if embedder.closeCalls != 1 {
+		t.Fatalf("expected embedder to be closed once on failure, got %d", embedder.closeCalls)
 	}
 }
 
