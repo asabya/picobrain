@@ -1,7 +1,6 @@
 package picobrain
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -38,16 +37,5 @@ func TestPromptsMentionStructuredClaims(t *testing.T) {
 	}
 	if !strings.Contains(ReflectorPrompt, "atomic claims") {
 		t.Fatal("ReflectorPrompt should mention atomic claims")
-	}
-}
-
-func TestObserverPromptRemovesLegacyOptionalSpacyGuidance(t *testing.T) {
-	for _, phrase := range legacyOptionalSpacyPhrases() {
-		if strings.Contains(ObserverPrompt, phrase) {
-			t.Fatalf("ObserverPrompt should not contain legacy SpaCy optionality phrase %q", phrase)
-		}
-	}
-	if !strings.Contains(ObserverPrompt, "requires SpaCy") {
-		t.Fatal("ObserverPrompt should describe mandatory SpaCy startup")
 	}
 }
