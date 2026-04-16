@@ -63,7 +63,7 @@ func (c *importCommand) Run() error {
 	}
 	defer f.Close()
 
-	brain, err := picobrain.New(cfg)
+	brain, err := newBrain(cfg)
 	if err != nil {
 		return fmt.Errorf("initialize brain: %w", err)
 	}

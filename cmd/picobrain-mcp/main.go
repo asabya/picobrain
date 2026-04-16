@@ -13,6 +13,12 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+var newBrain = picobrain.New
+
+var startHTTPServer = func(httpServer *server.StreamableHTTPServer, addr string) error {
+	return httpServer.Start(addr)
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		runServer(os.Args[1:])
@@ -39,6 +45,13 @@ func main() {
 }
 
 func runServer(args []string) {
+	if err := runServerE(args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func runServerE(args []string) error {
 	defaults := picobrain.DefaultConfig()
 
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
@@ -50,7 +63,9 @@ func runServer(args []string) {
 	autoPruneDays := fs.Int("auto-prune-days", defaults.AutoPruneDays, "automatically prune thoughts older than N days (0 to disable)")
 	prune := fs.Bool("prune", false, "run manual prune and exit")
 	namespace := fs.String("namespace", defaults.DefaultNamespace, "default namespace for thoughts (e.g., 'default', 'project-alpha')")
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	cfg := picobrain.Config{
 		DBPath:           *dbPath,
@@ -61,10 +76,9 @@ func runServer(args []string) {
 		DefaultNamespace: *namespace,
 	}
 
-	brain, err := picobrain.New(cfg)
+	brain, err := newBrain(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize brain: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to initialize brain: %w", err)
 	}
 	defer brain.Close()
 
@@ -72,11 +86,10 @@ func runServer(args []string) {
 		ctx := context.Background()
 		deleted, err := brain.Prune(ctx, cfg.AutoPruneDays)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "prune failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("prune failed: %w", err)
 		}
 		fmt.Printf("Pruned %d thought(s) older than %d days\n", deleted, cfg.AutoPruneDays)
-		os.Exit(0)
+		return nil
 	}
 
 	if cfg.AutoPruneDays > 0 {
@@ -119,10 +132,10 @@ func runServer(args []string) {
 	printStartupBanner(*port)
 
 	httpServer := server.NewStreamableHTTPServer(s)
-	if err := httpServer.Start(":" + *port); err != nil {
-		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
-		os.Exit(1)
+	if err := startHTTPServer(httpServer, ":"+*port); err != nil {
+		return fmt.Errorf("server error: %w", err)
 	}
+	return nil
 }
 
 func runExport(args []string) {
