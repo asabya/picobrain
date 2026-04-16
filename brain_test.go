@@ -73,11 +73,16 @@ func TestNewBrain(t *testing.T) {
 }
 
 func TestConstructorsRequireMandatorySpacyStartup(t *testing.T) {
+	originalEmbedderFactory := localEmbedderFactory
+	localEmbedderFactory = func(modelName, cacheDir string, autoDownload bool) (Embedder, error) {
+		return &mockEmbedder{dim: 768}, nil
+	}
 	originalFactory := depParserFactory
 	depParserFactory = func(string) (*DepParser, error) {
 		return nil, errors.New("spacy bootstrap failed")
 	}
 	t.Cleanup(func() {
+		localEmbedderFactory = originalEmbedderFactory
 		depParserFactory = originalFactory
 	})
 
@@ -100,6 +105,17 @@ func TestConstructorsRequireMandatorySpacyStartup(t *testing.T) {
 	}
 	if brain != nil {
 		t.Fatal("expected nil brain on constructor failure")
+	}
+
+	brain, err = New(cfg)
+	if err == nil {
+		if brain != nil {
+			brain.Close()
+		}
+		t.Fatal("expected New to fail when SpaCy startup fails")
+	}
+	if !strings.Contains(err.Error(), "spacy") {
+		t.Fatalf("expected SpaCy startup error from New, got %v", err)
 	}
 }
 
@@ -129,6 +145,37 @@ func TestNewWithEmbedderClosesEmbedderOnSpacyFailure(t *testing.T) {
 	}
 	if embedder.closeCalls != 1 {
 		t.Fatalf("expected embedder to be closed once on failure, got %d", embedder.closeCalls)
+	}
+}
+
+func TestNewWithEmbedderAttachesMandatoryDepParser(t *testing.T) {
+	originalFactory := depParserFactory
+	parser := &DepParser{}
+	depParserFactory = func(string) (*DepParser, error) {
+		return parser, nil
+	}
+	t.Cleanup(func() {
+		depParserFactory = originalFactory
+	})
+
+	cfg := Config{
+		DBPath:        ":memory:",
+		EmbedModel:    "mock",
+		ModelCacheDir: "",
+		AutoDownload:  false,
+	}
+
+	brain, err := NewWithEmbedder(cfg, &mockEmbedder{dim: 768})
+	if err != nil {
+		t.Fatalf("expected constructor success, got %v", err)
+	}
+	t.Cleanup(func() {
+		brain.depParser = nil
+		brain.Close()
+	})
+
+	if brain.depParser != parser {
+		t.Fatalf("expected constructor to attach dep parser %p, got %p", parser, brain.depParser)
 	}
 }
 
