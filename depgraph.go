@@ -21,6 +21,16 @@ const (
 	depParserRequestTimeout = 30 * time.Second
 )
 
+var errSpacyStartupHealthcheck = errors.New("spacy startup health check failed")
+
+var (
+	spacyServerFinder    = findSpacyServer
+	spacyServerInstaller = installSpacyServer
+	spacyServerStarter   = startSpacyServer
+	spacyServerWaiter    = waitForServer
+	spacyProcessStopper  = stopProcess
+)
+
 // Triple represents an extracted (head, relation, tail) from dependency parsing.
 type Triple struct {
 	Head     string `json:"head"`
@@ -38,19 +48,16 @@ type DepParser struct {
 }
 
 // NewDepParser starts the SpaCy sidecar server and returns a connected client.
-// If the server is not installed, it returns an error (unless autoInstall is true).
-func NewDepParser(cacheDir string, autoInstall bool) (*DepParser, error) {
-	serverDir, err := findSpacyServer()
+// If the server is not installed, it is installed into the resolved cache directory.
+func NewDepParser(cacheDir string) (*DepParser, error) {
+	serverDir, err := spacyServerFinder(cacheDir)
 	if err != nil {
-		if !autoInstall {
-			return nil, fmt.Errorf("spacy server not found: %w (set auto_install_spacy=true to auto-install)", err)
-		}
-		if err := installSpacyServer(cacheDir); err != nil {
+		if err := spacyServerInstaller(resolvedSpacyCacheDir(cacheDir)); err != nil {
 			return nil, fmt.Errorf("install spacy server: %w", err)
 		}
-		serverDir, err = findSpacyServer()
+		serverDir, err = spacyServerFinder(cacheDir)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("find spacy server after install: %w", err)
 		}
 	}
 
@@ -60,15 +67,15 @@ func NewDepParser(cacheDir string, autoInstall bool) (*DepParser, error) {
 	}
 
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
-	cmd, startupLogs, waitCh, err := startSpacyServer(serverDir, port)
+	cmd, startupLogs, waitCh, err := spacyServerStarter(serverDir, port)
 	if err != nil {
 		return nil, fmt.Errorf("start spacy server: %w", err)
 	}
 
 	startupHTTPClient := &http.Client{Timeout: time.Second}
-	if err := waitForServer(baseURL, startupHTTPClient, waitCh, startupLogs, depParserStartupTimeout); err != nil {
-		_ = stopProcess(cmd, waitCh)
-		return nil, err
+	if err := spacyServerWaiter(baseURL, startupHTTPClient, waitCh, startupLogs, depParserStartupTimeout); err != nil {
+		_ = spacyProcessStopper(cmd, waitCh)
+		return nil, fmt.Errorf("%w: %v", errSpacyStartupHealthcheck, err)
 	}
 
 	return &DepParser{
@@ -124,8 +131,14 @@ func (d *DepParser) Close() error {
 }
 
 // findSpacyServer looks for the SpaCy server installation.
-// It checks: PICOBRAIN_SPACY_DIR env var, then ~/.picobrain/spacy/server.py.
-func findSpacyServer() (string, error) {
+// It checks: explicit cacheDir override, PICOBRAIN_SPACY_DIR env var, then ~/.picobrain/spacy/server.py.
+func findSpacyServer(cacheDir string) (string, error) {
+	if dir := strings.TrimSpace(cacheDir); dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, "server.py")); err == nil {
+			return dir, nil
+		}
+	}
+
 	if dir := os.Getenv("PICOBRAIN_SPACY_DIR"); dir != "" {
 		if _, err := os.Stat(filepath.Join(dir, "server.py")); err == nil {
 			return dir, nil
@@ -143,10 +156,7 @@ func findSpacyServer() (string, error) {
 
 // installSpacyServer runs the install script to set up the SpaCy virtualenv.
 func installSpacyServer(cacheDir string) error {
-	if cacheDir == "" {
-		home, _ := os.UserHomeDir()
-		cacheDir = filepath.Join(home, ".picobrain", "spacy")
-	}
+	cacheDir = resolvedSpacyCacheDir(cacheDir)
 
 	// Find install.sh in the bundled spacy_server directory
 	execDir, err := os.Getwd()
@@ -190,6 +200,14 @@ func installSpacyServer(cacheDir string) error {
 		return fmt.Errorf("run install.sh: %w", err)
 	}
 	return nil
+}
+
+func resolvedSpacyCacheDir(cacheDir string) string {
+	if strings.TrimSpace(cacheDir) != "" {
+		return cacheDir
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".picobrain", "spacy")
 }
 
 // startSpacyServer starts the SpaCy FastAPI server as a subprocess.
