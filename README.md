@@ -21,6 +21,8 @@ picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 80
 
 Wait for the startup banner, then you're ready!
 
+> `picobrain` now treats the SpaCy parser sidecar as a mandatory startup dependency. On first run, startup may take longer while Picobrain discovers or installs the SpaCy runtime in `~/.picobrain/spacy` (or `PICOBRAIN_SPACY_DIR` if set). If SpaCy installation, startup, or health checks fail, Picobrain exits instead of continuing in a degraded mode.
+
 ### Option 2: Docker
 
 ```bash
@@ -34,6 +36,21 @@ git clone https://github.com/asabya/picobrain.git
 cd picobrain
 docker compose up -d
 ```
+
+## Mandatory SpaCy Startup
+
+Picobrain now fails fast unless the local SpaCy parser sidecar is available and healthy. That applies to:
+
+- the `picobrain` CLI server,
+- `export` / `import` flows that initialize a brain, and
+- Go library constructors such as `New` and `NewWithEmbedder`.
+
+Startup looks for an existing SpaCy install in this order:
+
+1. `PICOBRAIN_SPACY_DIR`
+2. `~/.picobrain/spacy`
+
+If no install is found, Picobrain attempts to provision the bundled SpaCy sidecar into the startup cache directory before serving traffic. See [`docs/migrations/mandatory-spacy-startup.md`](docs/migrations/mandatory-spacy-startup.md) for the breaking-change details.
 
 ---
 
@@ -155,6 +172,7 @@ Before asking the user to repeat something:
 | Variable | Description |
 |----------|-------------|
 | `PICOBRAIN_LLAMA_SERVER_BIN` | Path to `llama-server` binary |
+| `PICOBRAIN_SPACY_DIR` | Override the SpaCy sidecar install/discovery directory |
 
 ---
 
@@ -192,6 +210,7 @@ brain, err := picobrain.New(picobrain.Config{
     DBPath:        "~/.picobrain/brain.db",
     ModelCacheDir: "~/.picobrain/models",
     AutoDownload:  true,
+    SpacyCacheDir: "~/.picobrain/spacy",
 })
 if err != nil {
     log.Fatal(err)
@@ -239,6 +258,7 @@ go fmt ./... && go vet ./...
 - **nomic-embed-text-v1.5** for 768-dimensional embeddings
 - **MCP HTTP** for agent communication
 - **llama-server** (auto-spawned) for local embedding generation
+- **SpaCy sidecar** (mandatory at startup) for dependency parsing and auto-graph extraction
 
 ---
 
