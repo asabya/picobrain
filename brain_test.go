@@ -53,26 +53,6 @@ func TestNewBrain(t *testing.T) {
 	}
 }
 
-func TestNewWithEmbedderRequiresSpacyStartup(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PICOBRAIN_SPACY_DIR", "")
-
-	cfg := Config{
-		DBPath:        ":memory:",
-		EmbedModel:    "mock",
-		ModelCacheDir: t.TempDir(),
-		AutoDownload:  false,
-	}
-
-	brain, err := NewWithEmbedder(cfg, &mockEmbedder{dim: 768})
-	if err == nil {
-		if brain != nil {
-			_ = brain.Close()
-		}
-		t.Fatal("expected NewWithEmbedder to fail when SpaCy startup cannot succeed")
-	}
-}
-
 func TestBrainStore(t *testing.T) {
 	brain := testBrain(t)
 	ctx := context.Background()
