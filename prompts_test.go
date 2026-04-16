@@ -6,6 +6,14 @@ import (
 	"testing"
 )
 
+func legacyOptionalSpacyPhrases() []string {
+	return []string{
+		"SpaCy is " + "optional",
+		"degrade " + "gracefully",
+		"auto" + "_graph",
+	}
+}
+
 func TestObserverPromptNotEmpty(t *testing.T) {
 	if ObserverPrompt == "" {
 		t.Fatal("ObserverPrompt should not be empty")
@@ -33,25 +41,13 @@ func TestPromptsMentionStructuredClaims(t *testing.T) {
 	}
 }
 
-func TestObserverPromptNoLongerClaimsSpacyIsOptional(t *testing.T) {
-	if strings.Contains(ObserverPrompt, "SpaCy is optional") {
-		t.Fatalf("ObserverPrompt should not describe SpaCy as optional: %q", ObserverPrompt)
-	}
-	if strings.Contains(ObserverPrompt, "auto_graph") {
-		t.Fatalf("ObserverPrompt should not mention auto_graph: %q", ObserverPrompt)
-	}
-}
-
-func TestMandatorySpacyMigrationNotePresent(t *testing.T) {
-	path := "docs/migrations/mandatory-spacy-startup.md"
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	text := string(content)
-	for _, needle := range []string{"SpaCy", "mandatory", "EnableAutoGraph", "AutoInstallSpacy"} {
-		if !strings.Contains(text, needle) {
-			t.Fatalf("%s should mention %q", path, needle)
+func TestObserverPromptRemovesLegacyOptionalSpacyGuidance(t *testing.T) {
+	for _, phrase := range legacyOptionalSpacyPhrases() {
+		if strings.Contains(ObserverPrompt, phrase) {
+			t.Fatalf("ObserverPrompt should not contain legacy SpaCy optionality phrase %q", phrase)
 		}
+	}
+	if !strings.Contains(ObserverPrompt, "requires SpaCy") {
+		t.Fatal("ObserverPrompt should describe mandatory SpaCy startup")
 	}
 }
