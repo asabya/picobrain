@@ -13,9 +13,7 @@ type Config struct {
 	CacheSize          int
 	AutoPruneDays      int
 	DefaultNamespace   string
-	EnableAutoGraph    bool
 	SpacyCacheDir      string
-	AutoInstallSpacy  bool
 	AutoGraphThreshold float64
 }
 
@@ -28,9 +26,7 @@ func DefaultConfig() Config {
 		AutoDownload:       true,
 		AutoPruneDays:      30,
 		DefaultNamespace:   "default",
-		EnableAutoGraph:    false,
 		SpacyCacheDir:      filepath.Join(home, ".picobrain", "spacy"),
-		AutoInstallSpacy:   false,
 		AutoGraphThreshold: 0.7,
 	}
 }
