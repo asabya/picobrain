@@ -80,10 +80,10 @@ func openBrainDB(cfg Config) (*sql.DB, error) {
 
 func newBrainWithResources(cfg Config, db *sql.DB, emb Embedder, closeEmbedderOnError bool) (*Brain, error) {
 	brain := &Brain{
-		db:        db,
-		embedder:  emb,
-		config:    cfg,
-		cache:     NewThoughtCache(cfg.CacheSize),
+		db:       db,
+		embedder: emb,
+		config:   cfg,
+		cache:    NewThoughtCache(cfg.CacheSize),
 	}
 
 	parser, err := depParserFactory(cfg.SpacyCacheDir)
