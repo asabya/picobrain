@@ -12,125 +12,187 @@ import (
 )
 
 func RegisterMCPTools(s *server.MCPServer, brain *Brain) {
-	// store_thought
 	s.AddTool(
 		mcp.NewTool("store_thought",
-			mcp.WithDescription("CRITICAL: Store observations, facts, and decisions to your memory. Call this OFTEN - after every significant action, discovery, or decision. Do NOT wait until the end of a conversation. The client is responsible for classifying and extracting metadata before calling this tool."),
-			mcp.WithString("content", mcp.Required(), mcp.Description("The thought content to store. Be SPECIFIC: include file names, function names, exact values, error messages. Dense, factual observations only.")),
-			mcp.WithArray("people", mcp.Description("People mentioned in the thought (e.g., ['Alice', 'Bob'])")),
-			mcp.WithArray("topics", mcp.Description("Topics or themes (e.g., ['auth', 'refactor', 'bugfix'])")),
-			mcp.WithString("type", mcp.Description("Type of thought: decision (you made a choice), insight (you learned something), meeting (conversation summary), person_note (info about someone), idea (potential approach), task (work to do), observation (what you noticed)")),
-			mcp.WithArray("action_items", mcp.Description("Action items extracted from the thought (e.g., ['Fix timeout issue', 'Update documentation'])")),
-			mcp.WithString("source", mcp.Description("Where this was captured: claude, cursor, cli, slack, etc.")),
-			mcp.WithString("namespace", mcp.Description("Namespace for multi-tenant memory spaces (e.g., 'project-alpha', 'team-beta'). Defaults to 'default'.")),
+			mcp.WithDescription("Store a structured thought record with a summary plus one or more atomic claims."),
+			mcp.WithString("summary", mcp.Required(), mcp.Description("Human-readable summary of the record.")),
+			mcp.WithArray("claims", mcp.Required(), mcp.Description("Atomic claims for the record. Each item must include subject, predicate, object, polarity, cardinality, and status.")),
+			mcp.WithArray("people", mcp.Description("People mentioned in the record.")),
+			mcp.WithArray("topics", mcp.Description("Topics for grouping and index output.")),
+			mcp.WithString("type", mcp.Description("Record type, such as decision, insight, observation, or task.")),
+			mcp.WithString("source", mcp.Description("Source system for the record.")),
+			mcp.WithString("namespace", mcp.Description("Namespace for the record. Defaults to the configured namespace.")),
 		),
 		storeThoughtHandler(brain),
 	)
 
-	// semantic_search
 	s.AddTool(
 		mcp.NewTool("semantic_search",
-			mcp.WithDescription("Search your memory for relevant thoughts, observations, and facts. Use this BEFORE asking the user to repeat information they may have already told you. Searches by semantic meaning, not just keywords. Supports natural time filters like 'today', 'yesterday', 'last week', '3 days ago' in the query, or use explicit time_filter parameter."),
-			mcp.WithString("query", mcp.Required(), mcp.Description("Describe what you're looking for in natural language. Be specific about context, not just keywords. Example: 'What was the decision about auth timeout?' not just 'timeout'. You can include time expressions like 'today', 'yesterday', 'last week' which will be automatically extracted.")),
-			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 10)")),
-			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty to search all types.")),
-			mcp.WithArray("topics", mcp.Description("Filter by topics - only return thoughts that have ALL specified topics. Example: ['auth', 'security'] returns thoughts tagged with both auth AND security.")),
-			mcp.WithArray("people", mcp.Description("Filter by people mentioned - only return thoughts that mention ALL specified people. Example: ['Alice', 'Bob'] returns thoughts mentioning both Alice AND Bob.")),
-			mcp.WithString("before", mcp.Description("Filter thoughts created before this ISO8601 datetime. Example: 2024-01-15T10:30:00Z")),
-			mcp.WithString("after", mcp.Description("Filter thoughts created after this ISO8601 datetime. Example: 2024-01-01T00:00:00Z")),
-			mcp.WithString("time_filter", mcp.Description("Optional time filter for temporal queries. Supports: today, yesterday, this week, last week, this month, last month, N days/weeks/months ago, YYYY-MM-DD. Can also embed time expressions in the query itself (e.g., 'decisions from last week').")),
-			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty to search across all namespaces.")),
+			mcp.WithDescription("Search records semantically within a namespace."),
+			mcp.WithString("query", mcp.Required(), mcp.Description("Natural language query.")),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 10).")),
+			mcp.WithString("type", mcp.Description("Optional type filter.")),
+			mcp.WithArray("topics", mcp.Description("Optional topic filters. All topics must match.")),
+			mcp.WithArray("people", mcp.Description("Optional people filters. All people must match.")),
+			mcp.WithString("before", mcp.Description("Optional RFC3339 upper time bound.")),
+			mcp.WithString("after", mcp.Description("Optional RFC3339 lower time bound.")),
+			mcp.WithString("time_filter", mcp.Description("Optional natural-language time filter.")),
+			mcp.WithString("namespace", mcp.Description("Namespace to search. Defaults to the configured namespace.")),
 		),
 		semanticSearchHandler(brain),
 	)
 
-	// list_recent
 	s.AddTool(
 		mcp.NewTool("list_recent",
-			mcp.WithDescription("List your recent observations and thoughts. Use this to review what you've learned and done recently, or to find something you stored earlier today."),
-			mcp.WithString("since", mcp.Description("ISO8601 datetime to list thoughts from (default: 7 days ago). Example: 2024-01-15T10:30:00Z")),
-			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 20)")),
-			mcp.WithString("type", mcp.Description("Filter by thought type: decision, insight, meeting, person_note, idea, task, observation. Leave empty for all types.")),
-			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty to list across all namespaces.")),
+			mcp.WithDescription("List recent records within a namespace."),
+			mcp.WithString("since", mcp.Description("RFC3339 lower bound. Defaults to 7 days ago.")),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return (default: 20).")),
+			mcp.WithString("type", mcp.Description("Optional type filter.")),
+			mcp.WithString("namespace", mcp.Description("Namespace to list. Defaults to the configured namespace.")),
 		),
 		listRecentHandler(brain),
 	)
 
-	// stats
 	s.AddTool(
 		mcp.NewTool("stats",
-			mcp.WithDescription("Get statistics about your memory: total thoughts stored, recent activity, top topics, and sources. Use this to check if you're storing enough observations."),
-			mcp.WithString("namespace", mcp.Description("Filter by namespace. Leave empty for stats across all namespaces.")),
+			mcp.WithDescription("Get namespace-scoped memory statistics."),
+			mcp.WithString("namespace", mcp.Description("Namespace to summarize. Defaults to the configured namespace.")),
 		),
 		statsHandler(brain),
 	)
 
-	// bulk_import
 	s.AddTool(
 		mcp.NewTool("bulk_import",
-			mcp.WithDescription("Import multiple thoughts from JSONL format. Useful for migrating data from other systems or batch-loading historical notes. Each line is a JSON object. Embeddings are generated automatically."),
-			mcp.WithString("jsonl", mcp.Required(), mcp.Description("JSONL content — one thought per line as JSON. Required fields: content. Optional: people, topics, type, action_items, source. Example: {'content': 'Fact here', 'type': 'observation', 'topics': ['project']}")),
+			mcp.WithDescription("Import canonical JSONL records transactionally. Records must already include thought IDs and claim IDs."),
+			mcp.WithString("jsonl", mcp.Required(), mcp.Description("Canonical JSONL payload.")),
+			mcp.WithString("namespace", mcp.Description("Optional default namespace applied when an imported record omits namespace.")),
 		),
 		bulkImportHandler(brain),
 	)
 
-	// delete_thought
 	s.AddTool(
 		mcp.NewTool("delete_thought",
-			mcp.WithDescription("Delete a thought by ID. Normally used during reflection to remove stale observations. Use with caution - deletions are permanent."),
-			mcp.WithString("id", mcp.Required(), mcp.Description("The ID of the thought to delete")),
+			mcp.WithDescription("Delete a record by ID."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("Record ID to delete.")),
 		),
 		deleteThoughtHandler(brain),
 	)
 
-	// reflect
 	s.AddTool(
 		mcp.NewTool("reflect",
-			mcp.WithDescription("Consolidate and compress your observations. Run this periodically (after 20+ observations or at session end) to merge related thoughts and remove stale information. This keeps your memory efficient and relevant."),
-			mcp.WithArray("delete_ids", mcp.Required(), mcp.Description("IDs of thoughts to delete (the old observations you're consolidating)")),
-			mcp.WithArray("consolidated", mcp.Required(), mcp.Description("New consolidated thoughts to store. Each should be a dense combination of related old thoughts. Format: [{content: '...', people: [], topics: [], type: '...', action_items: [], source: '...'}]")),
+			mcp.WithDescription("Atomically delete old records and store new consolidated claim-bearing records."),
+			mcp.WithArray("delete_ids", mcp.Required(), mcp.Description("IDs of thoughts to delete.")),
+			mcp.WithArray("consolidated", mcp.Required(), mcp.Description("Consolidated structured records.")),
+			mcp.WithString("namespace", mcp.Description("Optional default namespace applied when a consolidated record omits namespace.")),
 		),
 		reflectHandler(brain),
 	)
 
-	// health
 	s.AddTool(
-		mcp.NewTool("health",
-			mcp.WithDescription("Check if picobrain is running and healthy. Use this to verify connectivity before starting work."),
+		mcp.NewTool("lint",
+			mcp.WithDescription("Run deterministic lint checks for contradictions, duplicates, superseded claims, and orphans within a namespace."),
+			mcp.WithString("namespace", mcp.Description("Namespace to lint. Defaults to the configured namespace.")),
 		),
+		lintHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("index",
+			mcp.WithDescription("Generate a structured on-demand index of records within a namespace."),
+			mcp.WithString("namespace", mcp.Description("Namespace to index. Defaults to the configured namespace.")),
+		),
+		indexHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("health", mcp.WithDescription("Check whether picobrain is healthy.")),
 		healthHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("create_edge",
+			mcp.WithDescription("Create a directed relationship between two records."),
+			mcp.WithString("source_id", mcp.Required(), mcp.Description("Source thought ID.")),
+			mcp.WithString("target_id", mcp.Required(), mcp.Description("Target thought ID.")),
+			mcp.WithString("relation_type", mcp.Required(), mcp.Description("Relationship type.")),
+			mcp.WithNumber("weight", mcp.Description("Edge weight/strength 0.0-1.0 (default 1.0).")),
+		),
+		createEdgeHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("delete_edge",
+			mcp.WithDescription("Remove a relationship between records."),
+			mcp.WithString("edge_id", mcp.Required(), mcp.Description("The edge ID to delete.")),
+		),
+		deleteEdgeHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("get_neighbors",
+			mcp.WithDescription("Get neighboring records for a thought ID."),
+			mcp.WithString("thought_id", mcp.Required(), mcp.Description("Thought ID to inspect.")),
+			mcp.WithString("direction", mcp.Description("Direction: out, in, or both.")),
+			mcp.WithString("relation_type", mcp.Description("Optional relation filter.")),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of edges to return (default: 20).")),
+		),
+		getNeighborsHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("find_path",
+			mcp.WithDescription("Find a graph path between two records."),
+			mcp.WithString("source_id", mcp.Required(), mcp.Description("Start thought ID.")),
+			mcp.WithString("target_id", mcp.Required(), mcp.Description("Target thought ID.")),
+			mcp.WithNumber("max_depth", mcp.Description("Maximum path depth (default: 5).")),
+		),
+		findPathHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("graph_stats", mcp.WithDescription("Get graph statistics.")),
+		graphStatsHandler(brain),
+	)
+
+	s.AddTool(
+		mcp.NewTool("extract_triples",
+			mcp.WithDescription("Extract dependency triples from text."),
+			mcp.WithString("text", mcp.Required(), mcp.Description("Text to parse.")),
+			mcp.WithString("thought_id", mcp.Description("Optional thought ID to link extracted triples to.")),
+		),
+		extractTriplesHandler(brain),
 	)
 }
 
 func storeThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		content, err := request.RequireString("content")
+		summary, err := request.RequireString("summary")
 		if err != nil {
-			return mcp.NewToolResultError("content is required"), nil
+			return jsonToolError("validation_failed", "summary", "is required"), nil
 		}
-
-		t := &Thought{
-			Content:     content,
-			Type:        request.GetString("type", ""),
-			Source:      request.GetString("source", ""),
-			Namespace:   request.GetString("namespace", ""),
-			People:      stringSliceArg(request, "people"),
-			Topics:      stringSliceArg(request, "topics"),
-			ActionItems: stringSliceArg(request, "action_items"),
+		claims, err := claimsFromRaw(request.GetArguments()["claims"])
+		if err != nil {
+			return validationToolError(err), nil
 		}
-
-		if err := brain.Store(ctx, t); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to store thought: %v", err)), nil
+		thought := &Thought{
+			Summary:   summary,
+			Claims:    claims,
+			Type:      request.GetString("type", ""),
+			Source:    request.GetString("source", ""),
+			Namespace: request.GetString("namespace", ""),
+			People:    stringSliceArg(request, "people"),
+			Topics:    stringSliceArg(request, "topics"),
 		}
-
-		result, _ := json.Marshal(map[string]string{
-			"id":        t.ID,
-			"status":    "stored",
-			"namespace": t.Namespace,
-			"message":   fmt.Sprintf("Thought stored with ID %s in namespace '%s'", t.ID, t.Namespace),
-			"reminder":  "Continue storing observations after every significant action!",
-		})
-		return mcp.NewToolResultText(string(result)), nil
+		if err := brain.store(ctx, thought, true, false); err != nil {
+			return validationToolError(err), nil
+		}
+		return jsonToolResult(map[string]any{
+			"id":          thought.ID,
+			"namespace":   thought.Namespace,
+			"claim_ids":   thought.claimIDs(),
+			"claim_count": len(thought.Claims),
+			"status":      "stored",
+		}), nil
 	}
 }
 
@@ -138,21 +200,15 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query, err := request.RequireString("query")
 		if err != nil {
-			return mcp.NewToolResultError("query is required"), nil
+			return jsonToolError("validation_failed", "query", "is required"), nil
 		}
-
 		limit := request.GetInt("limit", 10)
-		thoughtType := request.GetString("type", "")
-		timeFilter := request.GetString("time_filter", "")
-
-		// Build filters from request parameters
 		filters := SearchFilters{
-			Type:   thoughtType,
-			Topics: stringSliceArg(request, "topics"),
-			People: stringSliceArg(request, "people"),
+			Type:      request.GetString("type", ""),
+			Topics:    stringSliceArg(request, "topics"),
+			People:    stringSliceArg(request, "people"),
+			Namespace: request.GetString("namespace", brain.defaultNamespace()),
 		}
-
-		// Parse date filters if provided
 		if beforeStr := request.GetString("before", ""); beforeStr != "" {
 			if before, err := time.Parse(time.RFC3339, beforeStr); err == nil {
 				filters.Before = before
@@ -163,48 +219,25 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 				filters.After = after
 			}
 		}
-
-		// Handle time_filter parameter or extract from query
-		var timeRange *TimeRange
-		cleanQuery := query
-
-		if timeFilter != "" {
+		if timeFilter := request.GetString("time_filter", ""); timeFilter != "" {
 			tr, err := ParseTimeExpression(timeFilter, time.Now())
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid time filter: %v", err)), nil
 			}
-			timeRange = &tr
-			// Override before/after if time_filter is provided
-			filters.Before = timeRange.End
-			filters.After = timeRange.Start
+			filters.Before = tr.End
+			filters.After = tr.Start
 		} else {
 			result := ExtractTimeFilterFromQuery(query, time.Now())
 			if result.HasFilter {
-				timeRange = &TimeRange{Start: result.Start, End: result.End}
-				cleanQuery = result.CleanQuery
-				// Override before/after if extracted from query
-				filters.Before = timeRange.End
-				filters.After = timeRange.Start
+				query = result.CleanQuery
+				filters.Before = result.End
+				filters.After = result.Start
 			}
 		}
-
-		// Check if we need to use the new filtered search or legacy search
-		// Legacy search is used when only type is specified (for backward compatibility)
-		var results []Thought
-		if filters.Type != "" && len(filters.Topics) == 0 && len(filters.People) == 0 && filters.Before.IsZero() && filters.After.IsZero() {
-			// Use legacy search for backward compatibility
-			results, err = brain.Search(ctx, cleanQuery, limit, filters.Type, nil)
-		} else if len(filters.Topics) > 0 || len(filters.People) > 0 || !filters.Before.IsZero() || !filters.After.IsZero() || filters.Type != "" {
-			// Use new filtered search when any filter is specified
-			results, err = brain.SearchWithFilters(ctx, cleanQuery, limit, filters)
-		} else {
-			// No filters at all - use legacy search
-			results, err = brain.Search(ctx, cleanQuery, limit, "", nil)
-		}
+		results, err := brain.SearchWithFilters(ctx, query, limit, filters)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
 		}
-
 		out, _ := json.MarshalIndent(results, "", "  ")
 		return mcp.NewToolResultText(string(out)), nil
 	}
@@ -212,22 +245,16 @@ func semanticSearchHandler(brain *Brain) server.ToolHandlerFunc {
 
 func listRecentHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sinceStr := request.GetString("since", "")
 		since := time.Now().Add(-7 * 24 * time.Hour)
-		if sinceStr != "" {
+		if sinceStr := request.GetString("since", ""); sinceStr != "" {
 			if parsed, err := time.Parse(time.RFC3339, sinceStr); err == nil {
 				since = parsed
 			}
 		}
-
-		limit := request.GetInt("limit", 20)
-		thoughtType := request.GetString("type", "")
-
-		results, err := brain.ListRecent(ctx, since, limit, thoughtType)
+		results, err := brain.ListRecentWithNamespace(ctx, since, request.GetInt("limit", 20), request.GetString("type", ""), request.GetString("namespace", brain.defaultNamespace()))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("list recent failed: %v", err)), nil
 		}
-
 		out, _ := json.MarshalIndent(results, "", "  ")
 		return mcp.NewToolResultText(string(out)), nil
 	}
@@ -235,11 +262,10 @@ func listRecentHandler(brain *Brain) server.ToolHandlerFunc {
 
 func statsHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		stats, err := brain.Stats(ctx)
+		stats, err := brain.StatsByNamespace(ctx, request.GetString("namespace", brain.defaultNamespace()))
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("stats failed: %v", err)), nil
 		}
-
 		out, _ := json.MarshalIndent(stats, "", "  ")
 		return mcp.NewToolResultText(string(out)), nil
 	}
@@ -249,20 +275,18 @@ func bulkImportHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		jsonl, err := request.RequireString("jsonl")
 		if err != nil {
-			return mcp.NewToolResultError("jsonl is required"), nil
+			return jsonToolError("validation_failed", "jsonl", "is required"), nil
 		}
-
-		count, err := brain.BulkImport(ctx, strings.NewReader(jsonl))
+		results, err := brain.BulkImportDetailed(ctx, strings.NewReader(jsonl), request.GetString("namespace", ""))
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("import failed after %d thoughts: %v", count, err)), nil
+			return validationToolError(err), nil
 		}
-
-		result, _ := json.Marshal(map[string]any{
-			"imported": count,
-			"status":   "complete",
-			"message":  fmt.Sprintf("Successfully imported %d thoughts", count),
-		})
-		return mcp.NewToolResultText(string(result)), nil
+		return jsonToolResult(map[string]any{
+			"status":       "imported",
+			"namespace":    request.GetString("namespace", brain.defaultNamespace()),
+			"stored":       results,
+			"stored_count": len(results),
+		}), nil
 	}
 }
 
@@ -270,18 +294,12 @@ func deleteThoughtHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id, err := request.RequireString("id")
 		if err != nil {
-			return mcp.NewToolResultError("id is required"), nil
+			return jsonToolError("validation_failed", "id", "is required"), nil
 		}
-
 		if err := brain.Delete(ctx, id); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("delete failed: %v", err)), nil
 		}
-
-		result, _ := json.Marshal(map[string]any{
-			"deleted": true,
-			"id":      id,
-		})
-		return mcp.NewToolResultText(string(result)), nil
+		return jsonToolResult(map[string]any{"deleted": true, "id": id}), nil
 	}
 }
 
@@ -289,73 +307,187 @@ func reflectHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		deleteIDs := stringSliceArg(request, "delete_ids")
 		if len(deleteIDs) == 0 {
-			return mcp.NewToolResultError("delete_ids is required and must not be empty"), nil
+			return jsonToolError("validation_failed", "delete_ids", "must not be empty"), nil
 		}
-
 		consolidatedRaw, ok := request.GetArguments()["consolidated"]
 		if !ok {
-			return mcp.NewToolResultError("consolidated is required"), nil
+			return jsonToolError("validation_failed", "consolidated", "is required"), nil
 		}
-
-		consolidatedArr, ok := consolidatedRaw.([]any)
-		if !ok || len(consolidatedArr) == 0 {
-			return mcp.NewToolResultError("consolidated must be a non-empty array"), nil
+		consolidated, ok := consolidatedRaw.([]any)
+		if !ok || len(consolidated) == 0 {
+			return jsonToolError("validation_failed", "consolidated", "must be a non-empty array"), nil
 		}
-
-		newThoughts := make([]*Thought, 0, len(consolidatedArr))
-		for i, item := range consolidatedArr {
-			obj, ok := item.(map[string]any)
-			if !ok {
-				return mcp.NewToolResultError(fmt.Sprintf("consolidated[%d] must be an object", i)), nil
+		defaultNamespace := request.GetString("namespace", "")
+		newThoughts := make([]*Thought, 0, len(consolidated))
+		batchClaims := map[string]Claim{}
+		for i, item := range consolidated {
+			thought, err := thoughtFromMap(item, defaultNamespace)
+			if err != nil {
+				return validationToolError(annotateRecordError(i, err)), nil
 			}
-
-			content, _ := obj["content"].(string)
-			if content == "" {
-				return mcp.NewToolResultError(fmt.Sprintf("consolidated[%d].content is required", i)), nil
+			if err := prepareThoughtForStorage(thought, brain.defaultNamespace(), true, false); err != nil {
+				return validationToolError(annotateRecordError(i, err)), nil
 			}
-
-			t := &Thought{
-				Content: content,
-				Type:    getStringFromMap(obj, "type"),
-				Source:  getStringFromMap(obj, "source"),
+			emb, err := brain.embedder.Embed(ctx, thought.canonicalText())
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("generate embedding: %v", err)), nil
 			}
-			if people, ok := obj["people"].([]any); ok {
-				t.People = toStringSlice(people)
+			thought.Embedding = emb
+			newThoughts = append(newThoughts, thought)
+			for _, claim := range thought.Claims {
+				batchClaims[claim.ID] = claim
 			}
-			if topics, ok := obj["topics"].([]any); ok {
-				t.Topics = toStringSlice(topics)
-			}
-			if items, ok := obj["action_items"].([]any); ok {
-				t.ActionItems = toStringSlice(items)
-			}
-
-			newThoughts = append(newThoughts, t)
 		}
-
-		result, err := brain.Reflect(ctx, deleteIDs, newThoughts)
+		tx, err := brain.db.Begin()
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("reflect failed: %v", err)), nil
+			return mcp.NewToolResultError(fmt.Sprintf("begin transaction: %v", err)), nil
 		}
+		defer tx.Rollback()
+		for i, thought := range newThoughts {
+			if err := validateSupersessionReferences(tx, thought.Namespace, thought.Claims, batchClaims); err != nil {
+				return validationToolError(annotateRecordError(i, err)), nil
+			}
+		}
+		for _, id := range deleteIDs {
+			if err := deleteThoughtTx(tx, id); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("delete thought %s: %v", id, err)), nil
+			}
+		}
+		for _, thought := range newThoughts {
+			if err := insertPreparedThoughtTx(tx, thought); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("insert reflected thought: %v", err)), nil
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("commit reflection: %v", err)), nil
+		}
+		stored := make([]map[string]any, 0, len(newThoughts))
+		for _, thought := range newThoughts {
+			brain.cache.Put(*thought)
+			stored = append(stored, map[string]any{"id": thought.ID, "claim_ids": thought.claimIDs()})
+		}
+		return jsonToolResult(map[string]any{
+			"status":    "reflected",
+			"namespace": request.GetString("namespace", brain.defaultNamespace()),
+			"deleted":   deleteIDs,
+			"stored":    stored,
+		}), nil
+	}
+}
 
-		out, _ := json.MarshalIndent(result, "", "  ")
+func lintHandler(brain *Brain) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		issues, err := brain.Lint(ctx, request.GetString("namespace", brain.defaultNamespace()))
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("lint failed: %v", err)), nil
+		}
+		out, _ := json.MarshalIndent(issues, "", "  ")
+		return mcp.NewToolResultText(string(out)), nil
+	}
+}
+
+func indexHandler(brain *Brain) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		index, err := brain.Index(ctx, request.GetString("namespace", brain.defaultNamespace()))
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("index failed: %v", err)), nil
+		}
+		out, _ := json.MarshalIndent(index, "", "  ")
 		return mcp.NewToolResultText(string(out)), nil
 	}
 }
 
 func healthHandler(brain *Brain) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		stats, err := brain.Stats(ctx)
+		stats, err := brain.StatsByNamespace(ctx, brain.defaultNamespace())
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("health check failed: %v", err)), nil
 		}
-
-		result, _ := json.Marshal(map[string]any{
+		return jsonToolResult(map[string]any{
 			"status":         "healthy",
+			"namespace":      brain.defaultNamespace(),
 			"total_thoughts": stats.TotalThoughts,
-			"message":        "Picobrain is running and ready to store your observations",
-		})
-		return mcp.NewToolResultText(string(result)), nil
+		}), nil
 	}
+}
+
+func thoughtFromMap(raw any, defaultNamespace string) (*Thought, error) {
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return nil, validationError("consolidated", "must contain objects")
+	}
+	claims, err := claimsFromRaw(obj["claims"])
+	if err != nil {
+		return nil, err
+	}
+	return &Thought{
+		Summary:   getStringFromMap(obj, "summary"),
+		Claims:    claims,
+		Type:      getStringFromMap(obj, "type"),
+		Source:    getStringFromMap(obj, "source"),
+		Namespace: coalesceString(getStringFromMap(obj, "namespace"), defaultNamespace),
+		People:    anyStringSlice(obj["people"]),
+		Topics:    anyStringSlice(obj["topics"]),
+	}, nil
+}
+
+func claimsFromRaw(raw any) ([]Claim, error) {
+	arr, ok := raw.([]any)
+	if !ok || len(arr) == 0 {
+		return nil, validationError("claims", "must not be empty")
+	}
+	claims := make([]Claim, 0, len(arr))
+	for i, item := range arr {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			return nil, validationError(fmt.Sprintf("claims[%d]", i), "must be an object")
+		}
+		claims = append(claims, Claim{
+			Subject:           getStringFromMap(obj, "subject"),
+			Predicate:         getStringFromMap(obj, "predicate"),
+			Object:            getStringFromMap(obj, "object"),
+			Polarity:          getStringFromMap(obj, "polarity"),
+			Cardinality:       getStringFromMap(obj, "cardinality"),
+			Status:            getStringFromMap(obj, "status"),
+			SupersedesClaimID: getStringFromMap(obj, "supersedes_claim_id"),
+			Confidence:        getStringFromMap(obj, "confidence"),
+		})
+	}
+	return claims, nil
+}
+
+func validationToolError(err error) *mcp.CallToolResult {
+	field, message, meta := parseValidationParts(err)
+	payload := map[string]any{"error": "validation_failed", "field": field, "message": message}
+	for k, v := range meta {
+		payload[k] = v
+	}
+	return jsonToolResult(payload)
+}
+
+func parseValidationParts(err error) (string, string, map[string]any) {
+	message := err.Error()
+	parts := strings.Split(message, ":")
+	meta := map[string]any{}
+	if len(parts) >= 3 && parts[0] == "validation_failed" {
+		for _, extra := range parts[3:] {
+			kv := strings.SplitN(extra, "=", 2)
+			if len(kv) == 2 {
+				meta[kv[0]] = kv[1]
+			}
+		}
+		return parts[1], parts[2], meta
+	}
+	return "", message, meta
+}
+
+func jsonToolError(kind, field, message string) *mcp.CallToolResult {
+	return jsonToolResult(map[string]any{"error": kind, "field": field, "message": message})
+}
+
+func jsonToolResult(payload map[string]any) *mcp.CallToolResult {
+	out, _ := json.Marshal(payload)
+	return mcp.NewToolResultText(string(out))
 }
 
 func getStringFromMap(m map[string]any, key string) string {
@@ -365,33 +497,29 @@ func getStringFromMap(m map[string]any, key string) string {
 	return ""
 }
 
-func toStringSlice(arr []any) []string {
+func anyStringSlice(raw any) []string {
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
 	result := make([]string, 0, len(arr))
 	for _, item := range arr {
-		if s, ok := item.(string); ok {
-			result = append(result, s)
+		if value, ok := item.(string); ok {
+			result = append(result, value)
 		}
 	}
 	return result
 }
 
-// stringSliceArg extracts a string slice from an MCP request argument.
-func stringSliceArg(req mcp.CallToolRequest, name string) []string {
-	v, ok := req.GetArguments()[name]
-	if !ok || v == nil {
-		return nil
-	}
-
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-
-	result := make([]string, 0, len(arr))
-	for _, item := range arr {
-		if s, ok := item.(string); ok {
-			result = append(result, s)
+func coalesceString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
 		}
 	}
-	return result
+	return ""
+}
+
+func stringSliceArg(req mcp.CallToolRequest, name string) []string {
+	return anyStringSlice(req.GetArguments()[name])
 }

@@ -194,18 +194,17 @@ func (e *LocalEmbedder) Embed(ctx context.Context, text string) ([]float32, erro
 		return nil, fmt.Errorf("llama-server returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var result []struct {
-		Embedding [][]float32 `json:"embedding"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var raw any
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("decode embedding response: %w", err)
 	}
-	rawEmbedding := result[0].Embedding[0]
-
+	rawEmbedding, err := extractEmbedding(raw)
+	if err != nil {
+		return nil, err
+	}
 	if len(rawEmbedding) != ExpectedEmbeddingDim {
 		return nil, fmt.Errorf("expected %d dimensions, got %d", ExpectedEmbeddingDim, len(rawEmbedding))
 	}
-
 	return rawEmbedding, nil
 }
 
@@ -436,4 +435,44 @@ func downloadModel(repo, filename, destPath string) error {
 	}
 
 	return nil
+}
+
+
+func extractEmbedding(raw any) ([]float32, error) {
+	decodedMap, ok := raw.(map[string]any)
+	if ok {
+		if embedding, ok := decodedMap["embedding"]; ok {
+			return extractEmbeddingArray(embedding)
+		}
+	}
+	decodedList, ok := raw.([]any)
+	if ok && len(decodedList) > 0 {
+		if item, ok := decodedList[0].(map[string]any); ok {
+			if embedding, ok := item["embedding"]; ok {
+				return extractEmbeddingArray(embedding)
+			}
+		}
+	}
+	return nil, fmt.Errorf("decode embedding response: embedding field missing")
+}
+
+func extractEmbeddingArray(raw any) ([]float32, error) {
+	values, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("decode embedding response: embedding field malformed")
+	}
+	if len(values) > 0 {
+		if nested, ok := values[0].([]any); ok {
+			values = nested
+		}
+	}
+	embedding := make([]float32, len(values))
+	for i, value := range values {
+		number, ok := value.(float64)
+		if !ok {
+			return nil, fmt.Errorf("decode embedding response: embedding value %d malformed", i)
+		}
+		embedding[i] = float32(number)
+	}
+	return embedding, nil
 }
