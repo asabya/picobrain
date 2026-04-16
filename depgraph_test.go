@@ -27,9 +27,10 @@ func TestSplitPathSeq(t *testing.T) {
 	}
 }
 
-func TestExtractTriplesNoLongerMentionsAutoGraph(t *testing.T) {
+func TestDepParserNotAvailable(t *testing.T) {
 	brain := &Brain{}
 
+	// ExtractTriples should return error
 	_, err := brain.ExtractTriples(t.Context(), "test text")
 	if err == nil {
 		t.Fatal("expected error when depParser is nil")
