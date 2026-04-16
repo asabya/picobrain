@@ -24,45 +24,39 @@ type Brain struct {
 	cache     *ThoughtCache
 }
 
+var localEmbedderFactory = func(modelName, cacheDir string, autoDownload bool) (Embedder, error) {
+	return NewLocalEmbedder(modelName, cacheDir, autoDownload)
+}
+
+var depParserFactory = NewDepParser
+
 func New(cfg Config) (*Brain, error) {
 	sqlite_vec.Auto()
-	if cfg.DBPath != ":memory:" {
-		dir := filepath.Dir(cfg.DBPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("create db directory: %w", err)
-		}
-	}
-	db, err := sql.Open("sqlite3", cfg.DBPath)
+	db, err := openBrainDB(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+		return nil, err
 	}
-	if cfg.DBPath != ":memory:" {
-		db.Exec("PRAGMA journal_mode=WAL")
-	}
-	db.Exec("PRAGMA foreign_keys = ON")
-	if err := initSchema(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("init schema: %w", err)
-	}
-	embedder, err := NewLocalEmbedder(cfg.EmbedModel, cfg.ModelCacheDir, cfg.AutoDownload)
+
+	embedder, err := localEmbedderFactory(cfg.EmbedModel, cfg.ModelCacheDir, cfg.AutoDownload)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create embedder: %w", err)
 	}
-	brain := &Brain{db: db, embedder: embedder, config: cfg, cache: NewThoughtCache(cfg.CacheSize)}
-	if cfg.EnableAutoGraph {
-		parser, err := NewDepParser(cfg.SpacyCacheDir, cfg.AutoInstallSpacy)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: auto-graph disabled, spacy unavailable: %v\n", err)
-		} else {
-			brain.depParser = parser
-		}
-	}
-	return brain, nil
+
+	return newBrainWithResources(cfg, db, embedder, true)
 }
 
 func NewWithEmbedder(cfg Config, emb Embedder) (*Brain, error) {
 	sqlite_vec.Auto()
+	db, err := openBrainDB(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return newBrainWithResources(cfg, db, emb, true)
+}
+
+func openBrainDB(cfg Config) (*sql.DB, error) {
 	if cfg.DBPath != ":memory:" {
 		dir := filepath.Dir(cfg.DBPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -81,7 +75,28 @@ func NewWithEmbedder(cfg Config, emb Embedder) (*Brain, error) {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
-	return &Brain{db: db, embedder: emb, config: cfg, cache: NewThoughtCache(cfg.CacheSize)}, nil
+	return db, nil
+}
+
+func newBrainWithResources(cfg Config, db *sql.DB, emb Embedder, closeEmbedderOnError bool) (*Brain, error) {
+	brain := &Brain{
+		db:        db,
+		embedder:  emb,
+		config:    cfg,
+		cache:     NewThoughtCache(cfg.CacheSize),
+	}
+
+	parser, err := depParserFactory(cfg.SpacyCacheDir)
+	if err != nil {
+		if closeEmbedderOnError && emb != nil {
+			_ = emb.Close()
+		}
+		db.Close()
+		return nil, fmt.Errorf("initialize spacy dependency parser: %w", err)
+	}
+	brain.depParser = parser
+
+	return brain, nil
 }
 
 func (b *Brain) Close() error {
@@ -638,7 +653,7 @@ func (b *Brain) GraphStats(ctx context.Context) (*GraphStats, error) { return ge
 
 func (b *Brain) ExtractTriples(ctx context.Context, text string) ([]Triple, error) {
 	if b.depParser == nil {
-		return nil, fmt.Errorf("dependency parser not available: enable auto_graph in config and ensure spacy is installed")
+		return nil, fmt.Errorf("dependency parser not available")
 	}
 	return b.depParser.Parse(ctx, text)
 }
