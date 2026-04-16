@@ -42,10 +42,25 @@ func testBrain(t *testing.T) *Brain {
 	t.Helper()
 
 	originalFactory := depParserFactory
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/parse":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"triples":[]}`))
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
 	depParserFactory = func(string) (*DepParser, error) {
-		return &DepParser{}, nil
+		return &DepParser{
+			baseURL:    server.URL,
+			httpClient: server.Client(),
+		}, nil
 	}
 	t.Cleanup(func() {
+		server.Close()
 		depParserFactory = originalFactory
 	})
 
