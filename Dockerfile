@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install spaCy and FastAPI for dependency parsing (system-wide, no venv needed)
-RUN pip3 install --no-cache-dir spacy fastapi uvicorn pydantic && \
+RUN pip3 install --no-cache-dir --break-system-packages spacy fastapi uvicorn pydantic && \
     python3 -m spacy download en_core_web_sm
 
 RUN mkdir -p /data/models
