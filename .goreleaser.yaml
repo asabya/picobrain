@@ -112,6 +112,8 @@ dockers:
       - linux-amd64
     goarch: amd64
     dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - spacy_server
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--pull"
@@ -126,6 +128,8 @@ dockers:
       - linux-arm64
     goarch: arm64
     dockerfile: Dockerfile.goreleaser
+    extra_files:
+      - spacy_server
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--pull"
