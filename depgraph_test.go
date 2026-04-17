@@ -2,7 +2,6 @@ package picobrain
 
 import (
 	"testing"
-	"time"
 )
 
 func TestSplitPathSeq(t *testing.T) {

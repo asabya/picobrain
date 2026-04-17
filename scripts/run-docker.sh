@@ -14,4 +14,5 @@ docker compose build --no-cache
 docker compose up -d --force-recreate
 
 echo "picobrain is running with HTTP transport at http://localhost:8080"
+echo "Use --auth=username:password for remote deployments; clients must send HTTP Basic Auth when enabled."
 echo "Data and model cache persisted at $DATA_DIR"

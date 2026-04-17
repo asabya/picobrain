@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -17,6 +19,18 @@ var newBrain = picobrain.New
 
 var startHTTPServer = func(httpServer *server.StreamableHTTPServer, addr string) error {
 	return httpServer.Start(addr)
+}
+
+var startAuthHTTPServer = func(httpServer *http.Server, addr string) error {
+	if httpServer.Addr == "" {
+		httpServer.Addr = addr
+	}
+	return httpServer.ListenAndServe()
+}
+
+type basicAuthCredentials struct {
+	username string
+	password string
 }
 
 func main() {
@@ -63,7 +77,11 @@ func runServerE(args []string) error {
 	autoPruneDays := fs.Int("auto-prune-days", defaults.AutoPruneDays, "automatically prune thoughts older than N days (0 to disable)")
 	prune := fs.Bool("prune", false, "run manual prune and exit")
 	namespace := fs.String("namespace", defaults.DefaultNamespace, "default namespace for thoughts (e.g., 'default', 'project-alpha')")
-	if err := fs.Parse(args); err != nil {
+	filteredArgs, authCreds, err := extractAuthFlag(args)
+	if err != nil {
+		return fmt.Errorf("%w\nhint: start picobrain with --auth=username:password (example: picobrain serve --auth=alice:secret)", err)
+	}
+	if err := fs.Parse(filteredArgs); err != nil {
 		return err
 	}
 
@@ -128,11 +146,17 @@ func runServerE(args []string) error {
 			}), nil
 		},
 	)
-
+	streamableHTTPServer := server.NewStreamableHTTPServer(s)
 	printStartupBanner(*port)
-
-	httpServer := server.NewStreamableHTTPServer(s)
-	if err := startHTTPServer(httpServer, ":"+*port); err != nil {
+	if authCreds != nil {
+		protectedMux := http.NewServeMux()
+		protectedMux.Handle("/mcp", wrapBasicAuth(streamableHTTPServer, *authCreds))
+		if err := startAuthHTTPServer(&http.Server{Handler: protectedMux}, ":"+*port); err != nil {
+			return fmt.Errorf("server error: %w", err)
+		}
+		return nil
+	}
+	if err := startHTTPServer(streamableHTTPServer, ":"+*port); err != nil {
 		return fmt.Errorf("server error: %w", err)
 	}
 	return nil
@@ -186,4 +210,48 @@ func printStartupBanner(port string) {
 	fmt.Println("║    → Reflect periodically to keep memory efficient       ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════╝")
 	fmt.Println()
+}
+
+func parseAuthFlag(raw string) (basicAuthCredentials, error) {
+	username, password, ok := strings.Cut(raw, ":")
+	if !ok || username == "" || password == "" {
+		return basicAuthCredentials{}, fmt.Errorf("invalid --auth value %q: expected username:password", raw)
+	}
+	return basicAuthCredentials{username: username, password: password}, nil
+}
+
+func extractAuthFlag(args []string) ([]string, *basicAuthCredentials, error) {
+	filtered := make([]string, 0, len(args))
+	var creds *basicAuthCredentials
+	for _, arg := range args {
+		switch {
+		case arg == "--auth" || arg == "-auth":
+			return nil, nil, fmt.Errorf("invalid --auth value %q: expected username:password", arg)
+		case strings.HasPrefix(arg, "--auth=") || strings.HasPrefix(arg, "-auth="):
+			if creds != nil {
+				return nil, nil, fmt.Errorf("duplicate --auth flag")
+			}
+			raw := strings.SplitN(arg, "=", 2)[1]
+			parsed, err := parseAuthFlag(raw)
+			if err != nil {
+				return nil, nil, err
+			}
+			creds = &parsed
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered, creds, nil
+}
+
+func wrapBasicAuth(next http.Handler, creds basicAuthCredentials) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok || subtle.ConstantTimeCompare([]byte(username), []byte(creds.username)) != 1 || subtle.ConstantTimeCompare([]byte(password), []byte(creds.password)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="picobrain"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

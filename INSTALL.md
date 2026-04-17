@@ -29,6 +29,20 @@ picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 80
 
 This downloads both `picobrain` and `llama-server` binaries to `~/.picobrain/bin`.
 
+If you are exposing the server beyond localhost or another trusted boundary, add Basic Auth:
+
+```bash
+picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080 --auth=alice:secret
+```
+
+Then clients must send credentials with each MCP request, for example:
+
+```bash
+curl -u alice:secret --fail http://localhost:8080/mcp
+```
+
+Basic Auth is an access gate, not transport encryption. Pair it with TLS or a trusted tunnel/reverse proxy for remote deployments.
+
 ### Docker (keeps the embedder self-contained)
 
 ```bash
@@ -37,6 +51,8 @@ docker run -d -v ./data:/app/data -p 8080:8080 asabya/picobrain
 ```
 
 This pulls the pre-built image, stores the SQLite database in `./data/brain.db`, caches models in `./data/models`, and exposes MCP at `http://localhost:8080/mcp`. Logs stream to stdout, and the first run downloads `nomic-embed-text-v1.5.Q8_0.gguf` before MCP becomes available.
+
+If you need remote access protection, start the container with `--auth=username:password` and make sure your client sends HTTP Basic Auth on every MCP request.
 
 Alternatively, build locally:
 

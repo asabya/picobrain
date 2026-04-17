@@ -26,6 +26,8 @@ export PATH="$HOME/.picobrain/bin:$PATH"
 picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
 ```
 
+If you expose the server outside localhost, add `--auth=username:password` and configure your MCP client to send HTTP Basic Auth headers.
+
 ## Agent Behavior
 
 ### Always Store Observations

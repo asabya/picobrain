@@ -10,6 +10,8 @@ This project uses [Picobrain](https://github.com/asabya/picobrain) for local sem
    picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080
    ```
 
+   For remote deployments, add `--auth=username:password` and have the client send HTTP Basic Auth on every MCP request.
+
 2. The server exposes MCP tools at `http://localhost:8080/mcp`
 
 ## Agent Instructions

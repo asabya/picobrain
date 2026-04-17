@@ -62,6 +62,22 @@ curl http://localhost:8080/mcp
 
 You should see the MCP server response. The startup banner also shows all available tools.
 
+### Optional: Protect Remote Deployments with Basic Auth
+
+If you expose picobrain beyond localhost or another trusted network boundary, start it with:
+
+```bash
+picobrain --db ~/.picobrain/brain.db --model-cache ~/.picobrain/models --port 8080 --auth=alice:secret
+```
+
+Then send credentials with each MCP request, for example:
+
+```bash
+curl -u alice:secret http://localhost:8080/mcp
+```
+
+Basic Auth is an access gate, not transport encryption. For remote deployments, pair it with TLS or a trusted tunnel/reverse proxy.
+
 ---
 
 ## Connect Your Agent
@@ -165,6 +181,7 @@ Before asking the user to repeat something:
 | `--embed-model` | Embedding model | `nomic-embed-text-v1.5` |
 | `--model-cache` | Model cache directory | `~/.picobrain/models` |
 | `--port` | HTTP port | `8080` |
+| `--auth` | Optional HTTP Basic Auth in `username:password` form | _disabled_ |
 | `--no-auto-download` | Disable auto-download | `false` |
 
 ### Environment Variables
