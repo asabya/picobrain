@@ -35,7 +35,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libstdc++6 \
     libsqlite3-0 \
     libgomp1 \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install spaCy and FastAPI for dependency parsing (system-wide, no venv needed)
+RUN pip3 install --no-cache-dir --break-system-packages spacy fastapi uvicorn pydantic && \
+    python3 -m spacy download en_core_web_sm
 
 RUN mkdir -p /data/models
 
@@ -47,6 +53,10 @@ COPY --from=llama-download /tmp/llama/llama-server /usr/local/bin/llama-server
 COPY --from=llama-download /tmp/llama/*.so* /usr/local/bin/
 
 RUN echo "/usr/local/bin" > /etc/ld.so.conf.d/llama.conf && ldconfig
+
+# Copy spacy server for dependency parsing
+COPY spacy_server/ /app/spacy_server/
+ENV PICOBRAIN_SPACY_DIR=/app/spacy_server
 
 VOLUME ["/data"]
 
