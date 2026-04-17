@@ -213,19 +213,32 @@ func resolvedSpacyCacheDir(cacheDir string) string {
 // startSpacyServer starts the SpaCy FastAPI server as a subprocess.
 func startSpacyServer(serverDir string, port int) (*exec.Cmd, *bytes.Buffer, <-chan error, error) {
 	venvPython := filepath.Join(serverDir, "venv", "bin", "python")
-	if _, err := os.Stat(venvPython); err != nil {
-		return nil, nil, nil, fmt.Errorf("venv python not found at %s: %w", venvPython, err)
+	var cmd *exec.Cmd
+
+	// Try venv first, then fall back to system python3
+	if _, err := os.Stat(venvPython); err == nil {
+		args := []string{
+			"-m", "uvicorn",
+			"server:app",
+			"--host", "127.0.0.1",
+			"--port", strconv.Itoa(port),
+			"--log-level", "warning",
+		}
+		cmd = exec.Command(venvPython, args...)
+	} else {
+		// Fallback: use system python with module path
+		pythonPath := filepath.Join(serverDir)
+		args := []string{
+			"-m", "uvicorn",
+			"server:app",
+			"--host", "127.0.0.1",
+			"--port", strconv.Itoa(port),
+			"--log-level", "warning",
+		}
+		cmd = exec.Command("python3", args...)
+		cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
 	}
 
-	args := []string{
-		"-m", "uvicorn",
-		"server:app",
-		"--host", "127.0.0.1",
-		"--port", strconv.Itoa(port),
-		"--log-level", "warning",
-	}
-
-	cmd := exec.Command(venvPython, args...)
 	cmd.Dir = serverDir
 	var startupLogs bytes.Buffer
 	cmd.Stdout = io.MultiWriter(os.Stderr, &startupLogs)
